@@ -76,6 +76,48 @@ const RULES = [
     level: 'warning',
     message: 'Truncates file to zero bytes — all content will be lost',
   },
+  // Deleting root filesystem
+  {
+    pattern: /\brm\b[^;|&\n]*-[a-zA-Z]*r[a-zA-Z]*[^;|&\n]*\s+\/\s*$|\brm\b[^;|&\n]*-[a-zA-Z]*r[a-zA-Z]*[^;|&\n]*\s+\/\*/,
+    level: 'danger',
+    message: 'rm -rf / — will delete the entire filesystem',
+  },
+  // Recursive chmod 777
+  {
+    pattern: /\bchmod\b[^;|&\n]*-[Rr][^;|&\n]*\b777\b|\bchmod\b[^;|&\n]*\b777\b[^;|&\n]*-[Rr]/,
+    level: 'danger',
+    message: 'chmod -R 777 — recursively exposes entire directory tree to all users',
+  },
+  // Direct disk device write
+  {
+    pattern: />\s*\/dev\/(?:sd[a-z]|nvme\d|hd[a-z]|vd[a-z]|xvd[a-z]|disk\d)/,
+    level: 'danger',
+    message: 'Writing directly to a disk device — destroys partition data irreversibly',
+  },
+  // iptables flush
+  {
+    pattern: /\biptables\b[^;|&\n]*\s-F\b/,
+    level: 'warning',
+    message: 'iptables -F — flushes all firewall rules, exposing the system',
+  },
+  // Fork bomb
+  {
+    pattern: /:\s*\(\s*\)\s*\{.*:\s*\|.*:.*\}/,
+    level: 'danger',
+    message: 'Fork bomb — will exhaust system resources and crash the machine',
+  },
+  // userdel -r (removes home dir)
+  {
+    pattern: /\buserdel\b[^;|&\n]*-[a-zA-Z]*r/,
+    level: 'danger',
+    message: 'userdel -r — permanently deletes the user account and home directory',
+  },
+  // nohup with destructive commands (run destructive command immune to hangups)
+  {
+    pattern: /\bnohup\b[^;|&\n]*\brm\b[^;|&\n]*-[a-zA-Z]*r/,
+    level: 'danger',
+    message: 'Background recursive deletion — will continue even if terminal closes',
+  },
 ];
 
 export function checkDanger(commandString) {
