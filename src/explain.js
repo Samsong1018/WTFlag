@@ -30,7 +30,7 @@ function format(raw, results) {
   const dim = chalk.dim;
   const lines = [];
 
-  lines.push(dim('┌') + chalk.bold.cyan(' wtflag ') + dim('─'.repeat(W - 17) + '┐'));
+  lines.push(dim('┌') + chalk.bold.cyan(' wtflag ') + dim('─'.repeat(W - 7) + '┐'));
   lines.push(dim('│ ') + chalk.white(truncate(raw, W - 2)));
   lines.push(dim('│'));
 

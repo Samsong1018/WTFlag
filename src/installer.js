@@ -11,12 +11,18 @@ export function install() {
   settings.hooks ??= {};
   settings.hooks.PreToolUse ??= [];
 
-  if (settings.hooks.PreToolUse.some(h => h.command === HOOK_COMMAND)) {
+  const alreadyInstalled = settings.hooks.PreToolUse.some(
+    h => Array.isArray(h.hooks) && h.hooks.some(e => e.command === HOOK_COMMAND)
+  );
+  if (alreadyInstalled) {
     console.log('wtflag is already installed.');
     return;
   }
 
-  settings.hooks.PreToolUse.push({ matcher: 'Bash', command: HOOK_COMMAND });
+  settings.hooks.PreToolUse.push({
+    matcher: 'Bash',
+    hooks: [{ type: 'command', command: HOOK_COMMAND }],
+  });
   writeSettings(settings);
   console.log('✓ Hook installed. Restart Claude Code to activate.');
 }
@@ -31,7 +37,7 @@ export function uninstall() {
 
   const before = settings.hooks.PreToolUse.length;
   settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(
-    h => h.command !== HOOK_COMMAND
+    h => !(Array.isArray(h.hooks) && h.hooks.some(e => e.command === HOOK_COMMAND))
   );
 
   if (settings.hooks.PreToolUse.length === before) {
