@@ -6,7 +6,7 @@ import { runHook } from '../src/hook.js';
 import { buildDb } from '../scripts/build-db.js';
 
 program
-  .name('shellexplainer')
+  .name('wtflag')
   .description('Explains shell commands run by Claude Code')
   .version('0.1.0');
 

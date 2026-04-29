@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 
 const SETTINGS_PATH = join(homedir(), '.claude', 'settings.json');
-const HOOK_COMMAND = 'shellexplainer hook';
+const HOOK_COMMAND = 'wtflag hook';
 
 export function install() {
   const settings = readSettings();
@@ -12,7 +12,7 @@ export function install() {
   settings.hooks.PreToolUse ??= [];
 
   if (settings.hooks.PreToolUse.some(h => h.command === HOOK_COMMAND)) {
-    console.log('shellexplainer is already installed.');
+    console.log('wtflag is already installed.');
     return;
   }
 
@@ -35,7 +35,7 @@ export function uninstall() {
   );
 
   if (settings.hooks.PreToolUse.length === before) {
-    console.log('No shellexplainer hook found.');
+    console.log('No wtflag hook found.');
     return;
   }
 

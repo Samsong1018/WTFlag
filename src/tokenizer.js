@@ -50,7 +50,12 @@ function parseSegment(segment) {
     if (expectValue) { args.push(token); expectValue = false; continue; }
 
     if (token.startsWith('-')) {
-      flags.push(token);
+      // Expand combined short flags: -am → -a -m (skip long flags and --)
+      if (/^-[a-zA-Z]{2,}$/.test(token)) {
+        for (const ch of token.slice(1)) flags.push(`-${ch}`);
+      } else {
+        flags.push(token);
+      }
       // Flags like -o that typically take a value (heuristic: short flag, no =)
       if (/^-[a-zA-Z]$/.test(token)) expectValue = false; // can't know without help text
     } else if (!subcommand && /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(token)) {

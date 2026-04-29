@@ -1,19 +1,28 @@
 import chalk from 'chalk';
 import { tokenize } from './tokenizer.js';
-import { lookupCommand, dbExists } from './tldr.js';
+import { lookupCommand, lookupCompound, dbExists } from './tldr.js';
 import { explainFlags } from './flags.js';
 
 export function explain(commandString) {
   const segments = tokenize(commandString).filter(Boolean);
   if (!segments.length) return null;
 
-  const results = segments.map(({ command, subcommand, flags }) => ({
-    label: subcommand ? `${command} ${subcommand}` : command,
-    tldr: lookupCommand(command, subcommand),
-    flags: explainFlags(command, subcommand, flags),
-  }));
-
+  const results = segments.map(resolveSegment);
   return format(commandString, results);
+}
+
+// Only use subcommand if the compound name exists in tldr (git-commit, npm-install, etc.)
+// This prevents "grep foo" from incorrectly showing as label "grep foo"
+function resolveSegment({ command, subcommand, flags }) {
+  const compoundTldr = subcommand ? lookupCompound(command, subcommand) : null;
+  const tldr = compoundTldr ?? lookupCommand(command);
+  const resolvedSub = compoundTldr ? subcommand : null;
+
+  return {
+    label: resolvedSub ? `${command} ${resolvedSub}` : command,
+    description: tldr?.description ?? null,
+    flags: explainFlags(command, resolvedSub, flags),
+  };
 }
 
 function format(raw, results) {
@@ -21,18 +30,18 @@ function format(raw, results) {
   const dim = chalk.dim;
   const lines = [];
 
-  lines.push(dim('┌') + chalk.bold.cyan(' shellexplainer ') + dim('─'.repeat(W - 17) + '┐'));
+  lines.push(dim('┌') + chalk.bold.cyan(' wtflag ') + dim('─'.repeat(W - 17) + '┐'));
   lines.push(dim('│ ') + chalk.white(truncate(raw, W - 2)));
   lines.push(dim('│'));
 
-  for (const { label, tldr, flags } of results) {
-    const desc = tldr?.description ?? dim('not in tldr database');
+  for (const { label, description, flags } of results) {
+    const desc = description ?? dim('not in tldr database');
     lines.push(dim('│ ') + chalk.bold(label) + dim(' — ') + desc);
 
     if (flags.length) {
       lines.push(dim('│'));
-      for (const { flag, description } of flags) {
-        lines.push(dim('│   ') + chalk.yellow(flag.padEnd(14)) + description);
+      for (const { flag, description: flagDesc } of flags) {
+        lines.push(dim('│   ') + chalk.yellow(flag.padEnd(14)) + flagDesc);
       }
     }
 
@@ -41,7 +50,7 @@ function format(raw, results) {
 
   if (!dbExists()) {
     lines.push(dim('│'));
-    lines.push(dim('│  ') + chalk.dim('Run `shellexplainer update-db` to enable full descriptions.'));
+    lines.push(dim('│  ') + chalk.dim('Run `wtflag update-db` to enable full descriptions.'));
   }
 
   lines.push(dim('└' + '─'.repeat(W + 1) + '┘'));

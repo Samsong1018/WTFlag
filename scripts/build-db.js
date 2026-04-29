@@ -1,8 +1,8 @@
-import { createRequire } from 'node:module';
+import { DatabaseSync } from 'node:sqlite';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, unlinkSync } from 'node:fs';
+import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -15,7 +15,6 @@ export async function buildDb() {
 
   if (!existsSync(DB_DIR)) mkdirSync(DB_DIR, { recursive: true });
 
-  // Download zip
   const res = await fetch(ZIP_URL);
   if (!res.ok) throw new Error(`Failed to download tldr-pages: ${res.status}`);
   const buffer = Buffer.from(await res.arrayBuffer());
@@ -26,16 +25,15 @@ export async function buildDb() {
   const zip = new AdmZip(buffer);
   const entries = zip.getEntries();
 
-  const Database = require('better-sqlite3');
   if (existsSync(DB_PATH)) unlinkSync(DB_PATH);
-  const db = new Database(DB_PATH);
+  const db = new DatabaseSync(DB_PATH);
 
   db.exec(`
     CREATE TABLE commands (
-      name     TEXT PRIMARY KEY,
-      platform TEXT,
+      name        TEXT PRIMARY KEY,
+      platform    TEXT,
       description TEXT,
-      content  TEXT
+      content     TEXT
     );
     CREATE INDEX idx_name ON commands(name);
   `);
@@ -44,29 +42,22 @@ export async function buildDb() {
     'INSERT OR REPLACE INTO commands (name, platform, description, content) VALUES (?, ?, ?, ?)'
   );
 
-  const insertMany = db.transaction((rows) => {
-    for (const row of rows) insert.run(row.name, row.platform, row.description, row.content);
-  });
-
-  const rows = [];
-
+  let count = 0;
   for (const entry of entries) {
-    const path = entry.entryName;
-    // Match: pages/common/git-commit.md or pages.en/linux/apt.md
-    const match = path.match(/^pages(?:\.\w+)?\/(\w+)\/(.+)\.md$/);
+    // Only process base English pages, skip localized pages.zh/, pages.de/, etc.
+    const match = entry.entryName.match(/^pages\/(\w+)\/(.+)\.md$/);
     if (!match) continue;
 
     const [, platform, name] = match;
     const content = entry.getData().toString('utf8');
     const description = extractDescription(content);
 
-    rows.push({ name, platform, description, content });
+    insert.run(name, platform, description, content);
+    count++;
   }
 
-  insertMany(rows);
   db.close();
-
-  console.log(`✓ Database built with ${rows.length} commands → ${DB_PATH}`);
+  console.log(`✓ Database built with ${count} commands → ${DB_PATH}`);
 }
 
 function extractDescription(markdown) {
@@ -76,13 +67,11 @@ function extractDescription(markdown) {
     if (line.startsWith('> ') && !line.includes('http')) {
       descLines.push(line.slice(2).replace(/\.$/, ''));
     }
-    // Stop collecting after the description block
     if (descLines.length && !line.startsWith('>')) break;
   }
   return descLines.join(' ') || null;
 }
 
-// Allow running directly: node scripts/build-db.js
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   buildDb().catch(err => { console.error(err.message); process.exit(1); });
 }
