@@ -3,6 +3,7 @@ import { program } from 'commander';
 import { install, uninstall } from '../src/installer.js';
 import { explain } from '../src/explain.js';
 import { runHook } from '../src/hook.js';
+import { startWatcher } from '../src/watcher.js';
 import { buildDb } from '../scripts/build-db.js';
 
 program
@@ -32,6 +33,11 @@ program
   .command('hook')
   .description('Hook entrypoint — reads Bash tool JSON from stdin')
   .action(runHook);
+
+program
+  .command('watch')
+  .description('Open the watcher terminal — explanations appear here as Claude runs commands')
+  .action(startWatcher);
 
 program
   .command('update-db')
