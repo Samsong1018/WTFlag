@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 
 const SETTINGS_PATH = join(homedir(), '.claude', 'settings.json');
-const HOOK_COMMAND = 'wtflag hook';
+const HOOK_COMMAND = 'NODE_NO_WARNINGS=1 wtflag hook';
+const HOOK_COMMAND_LEGACY = 'wtflag hook';
 
 export function install() {
   const settings = readSettings();
@@ -11,11 +12,26 @@ export function install() {
   settings.hooks ??= {};
   settings.hooks.PreToolUse ??= [];
 
-  const alreadyInstalled = settings.hooks.PreToolUse.some(
-    h => Array.isArray(h.hooks) && h.hooks.some(e => e.command === HOOK_COMMAND)
+  const findEntry = (cmd) => settings.hooks.PreToolUse.some(
+    h => Array.isArray(h.hooks) && h.hooks.some(e => e.command === cmd)
   );
-  if (alreadyInstalled) {
+
+  if (findEntry(HOOK_COMMAND)) {
     console.log('wtflag is already installed.');
+    return;
+  }
+
+  // Migrate legacy install to suppress the SQLite experimental warning
+  if (findEntry(HOOK_COMMAND_LEGACY)) {
+    for (const h of settings.hooks.PreToolUse) {
+      if (Array.isArray(h.hooks)) {
+        for (const e of h.hooks) {
+          if (e.command === HOOK_COMMAND_LEGACY) e.command = HOOK_COMMAND;
+        }
+      }
+    }
+    writeSettings(settings);
+    console.log('✓ Hook upgraded. Restart Claude Code to activate.');
     return;
   }
 
@@ -37,7 +53,9 @@ export function uninstall() {
 
   const before = settings.hooks.PreToolUse.length;
   settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(
-    h => !(Array.isArray(h.hooks) && h.hooks.some(e => e.command === HOOK_COMMAND))
+    h => !(Array.isArray(h.hooks) && h.hooks.some(e =>
+      e.command === HOOK_COMMAND || e.command === HOOK_COMMAND_LEGACY
+    ))
   );
 
   if (settings.hooks.PreToolUse.length === before) {

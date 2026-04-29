@@ -2,6 +2,8 @@ import chalk from 'chalk';
 import { tokenize } from './tokenizer.js';
 import { lookupCommand, lookupCompound, dbExists } from './tldr.js';
 import { explainFlags } from './flags.js';
+import { checkDanger, renderDangerLines } from './danger.js';
+import { getArgumentContext } from './context.js';
 
 export function explain(commandString) {
   const segments = tokenize(commandString).filter(Boolean);
@@ -13,7 +15,7 @@ export function explain(commandString) {
 
 // Only use subcommand if the compound name exists in tldr (git-commit, npm-install, etc.)
 // This prevents "grep foo" from incorrectly showing as label "grep foo"
-function resolveSegment({ command, subcommand, flags }) {
+function resolveSegment({ command, subcommand, flags, args }) {
   const compoundTldr = subcommand ? lookupCompound(command, subcommand) : null;
   const tldr = compoundTldr ?? lookupCommand(command);
   const resolvedSub = compoundTldr ? subcommand : null;
@@ -22,6 +24,9 @@ function resolveSegment({ command, subcommand, flags }) {
     label: resolvedSub ? `${command} ${resolvedSub}` : command,
     description: tldr?.description ?? null,
     flags: explainFlags(command, resolvedSub, flags),
+    // Use original tokenizer subcommand for context (not tldr-resolved) so handlers
+    // fire correctly even when the tldr DB doesn't have the compound entry
+    context: getArgumentContext(command, subcommand, args, flags),
   };
 }
 
@@ -34,9 +39,19 @@ function format(raw, results) {
   lines.push(dim('│ ') + chalk.white(truncate(raw, W - 2)));
   lines.push(dim('│'));
 
-  for (const { label, description, flags } of results) {
+  const dangers = checkDanger(raw);
+  if (dangers.length) {
+    lines.push(...renderDangerLines(dangers, dim));
+    lines.push(dim('│'));
+  }
+
+  for (const { label, description, flags, context } of results) {
     const desc = description ?? dim('not in tldr database');
     lines.push(dim('│ ') + chalk.bold(label) + dim(' — ') + desc);
+
+    if (context) {
+      lines.push(dim('│   ') + chalk.dim('→ ') + chalk.dim.italic(context));
+    }
 
     if (flags.length) {
       lines.push(dim('│'));
