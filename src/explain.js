@@ -1,4 +1,5 @@
-import chalk from 'chalk';
+import { Chalk } from 'chalk';
+const chalk = new Chalk({ level: 3 });
 import { tokenize, detectRedirects } from './tokenizer.js';
 import { lookupCommand, lookupCompound, dbExists } from './tldr.js';
 import { explainFlags } from './flags.js';

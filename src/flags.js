@@ -46,7 +46,21 @@ function matchFlag(flag, helpText) {
     );
     if (flagLine) {
       const tokens = flagLine[1].split(/[\s,]+/).map(t => t.replace(/=.*$/, ''));
-      if (tokens.includes(cleanFlag)) return flagLine[2].trim();
+      if (tokens.includes(cleanFlag)) {
+        // Grab the first-line description, then append wrapped continuation lines.
+        // A continuation line is indented more than the flag column and doesn't
+        // start with a new flag.
+        let desc = flagLine[2].trim();
+        const indent = line.match(/^\s*/)[0].length;
+        for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+          const next = lines[j];
+          const nextIndent = next.match(/^\s*/)[0].length;
+          const nextTrim = next.trim();
+          if (!nextTrim || nextTrim.startsWith('-') || nextIndent <= indent) break;
+          desc += ' ' + nextTrim;
+        }
+        return desc.trim();
+      }
       continue;
     }
 
