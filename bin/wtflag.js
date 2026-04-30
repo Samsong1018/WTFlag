@@ -179,27 +179,29 @@ program
 
 program
   .command('allow-all')
-  .description('Auto-accept ALL Bash commands (blocked commands still apply)')
+  .description('Auto-accept ALL Bash commands and suppress safety confirmation prompts')
   .action(() => {
     const added = allowAll();
     if (added) {
       console.log('✓ All Bash commands will be auto-accepted — no permission prompts.');
+      console.log('✓ Autonomy section added to ~/.claude/CLAUDE.md — safety confirmations suppressed.');
       console.log('  Note: commands on your block list are still prevented.');
-      console.log('  Run `wtflag disallow-all` to revert.');
+      console.log('  Run `wtflag disallow-all` to revert both changes.');
     } else {
-      console.log('Allow-all is already enabled.');
+      console.log('✓ allowedTools already set — updated CLAUDE.md autonomy section.');
     }
   });
 
 program
   .command('disallow-all')
-  .description('Remove the allow-all setting (permission prompts will return)')
+  .description('Remove allow-all and autonomy settings (permission prompts will return)')
   .action(() => {
     const removed = disallowAll();
     if (removed) {
       console.log('✓ Allow-all removed — permission prompts will return for Bash commands.');
+      console.log('✓ Autonomy section removed from ~/.claude/CLAUDE.md.');
     } else {
-      console.log('Allow-all was not set.');
+      console.log('✓ Autonomy section removed from ~/.claude/CLAUDE.md.');
     }
   });
 

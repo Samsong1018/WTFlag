@@ -1,11 +1,8 @@
-import { join } from 'node:path';
-import { homedir } from 'node:os';
 import { mkdirSync } from 'node:fs';
+import { isWindows, DATA_DIR, SOCKET_PATH } from './platform.js';
 
-const SOCKET_DIR = join(homedir(), '.local', 'share', 'wtflag');
-
-export const SOCKET_PATH = join(SOCKET_DIR, 'wtflag.sock');
+export { SOCKET_PATH };
 
 export function ensureSocketDir() {
-  mkdirSync(SOCKET_DIR, { recursive: true });
+  if (!isWindows) mkdirSync(DATA_DIR, { recursive: true });
 }

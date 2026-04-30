@@ -2,12 +2,13 @@ import net from 'node:net';
 import { existsSync, rmSync } from 'node:fs';
 import chalk from 'chalk';
 import { SOCKET_PATH, ensureSocketDir } from './ipc.js';
+import { isWindows } from './platform.js';
 
 export function startWatcher() {
   ensureSocketDir();
 
-  // Remove stale socket left by a previous crash
-  if (existsSync(SOCKET_PATH)) rmSync(SOCKET_PATH);
+  // Remove stale socket left by a previous crash (Unix only — named pipes clean up automatically)
+  if (!isWindows && existsSync(SOCKET_PATH)) rmSync(SOCKET_PATH);
 
   const server = net.createServer((conn) => {
     let buf = '';
@@ -31,7 +32,7 @@ export function startWatcher() {
 
   const cleanup = (code = 0) => {
     server.close();
-    try { if (existsSync(SOCKET_PATH)) rmSync(SOCKET_PATH); } catch {}
+    try { if (!isWindows && existsSync(SOCKET_PATH)) rmSync(SOCKET_PATH); } catch {}
     process.exit(code);
   };
 

@@ -2,6 +2,7 @@ import net from 'node:net';
 import { existsSync } from 'node:fs';
 import { explain, renderBlocked, effectiveCommand } from './explain.js';
 import { SOCKET_PATH } from './ipc.js';
+import { isWindows } from './platform.js';
 import { matchesPattern } from './config.js';
 import { getEffectiveConfig } from './project-config.js';
 import { tokenize } from './tokenizer.js';
@@ -83,7 +84,8 @@ export async function runHook() {
 }
 
 function sendToWatcher(output) {
-  if (!existsSync(SOCKET_PATH)) return;
+  // On Windows, named pipes can't be checked with existsSync — just try to connect
+  if (!isWindows && !existsSync(SOCKET_PATH)) return;
   const socket = net.createConnection(SOCKET_PATH);
   const timer = setTimeout(() => socket.destroy(), 300);
   socket.on('connect', () => { clearTimeout(timer); socket.end(output); });

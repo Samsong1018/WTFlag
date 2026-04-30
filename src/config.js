@@ -1,8 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { CONFIG_DIR } from './platform.js';
 
-const CONFIG_DIR = join(homedir(), '.config', 'wtflag');
 const CONFIG_PATH = join(CONFIG_DIR, 'config.json');
 
 function readConfig() {

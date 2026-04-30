@@ -1,10 +1,9 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { HOOK_COMMAND, HOOK_COMMAND_LEGACY } from './platform.js';
 
 const SETTINGS_PATH = join(homedir(), '.claude', 'settings.json');
-const HOOK_COMMAND = 'NODE_NO_WARNINGS=1 wtflag hook';
-const HOOK_COMMAND_LEGACY = 'wtflag hook';
 
 export function install() {
   const settings = readSettings();

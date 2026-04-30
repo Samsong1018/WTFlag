@@ -1,8 +1,8 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { CONFIG_DIR } from './platform.js';
 
-const PROFILES_DIR = join(homedir(), '.config', 'wtflag', 'profiles');
+const PROFILES_DIR = join(CONFIG_DIR, 'profiles');
 
 export const BUILTIN = {
   safe: {

@@ -1,9 +1,8 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { DATA_DIR } from './platform.js';
 
-const LOG_DIR = join(homedir(), '.local', 'share', 'wtflag');
-export const LOG_PATH = join(LOG_DIR, 'log.jsonl');
+const LOG_DIR = DATA_DIR;
+export const LOG_PATH = `${DATA_DIR}/log.jsonl`;
 
 export function appendLog(entry) {
   try {
