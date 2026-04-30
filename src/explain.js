@@ -6,8 +6,29 @@ import { explainFlags } from './flags.js';
 import { checkDanger, renderDangerLines } from './danger.js';
 import { getArgumentContext } from './context.js';
 
-export function explain(commandString) {
-  const segments = tokenize(commandString).filter(Boolean);
+// Returns the command that should be matched against the mute/block lists.
+// For `sudo grep …`, the effective command is `grep`, not `sudo`.
+export function effectiveCommand(seg) {
+  return (seg.command === 'sudo' && seg.subcommand ? seg.subcommand : seg.command).toLowerCase();
+}
+
+export function renderBlocked(blockedName, rawCommand) {
+  const W = Math.max(Math.min((process.stdout.columns ?? 80) - 4, 110), 58);
+  const dim = chalk.dim;
+  const lines = [];
+  lines.push(dim('┌') + chalk.bold.red(' BLOCKED ') + dim('─'.repeat(W - 8) + '┐'));
+  lines.push(dim('│ ') + chalk.bold.red(truncate(rawCommand, W - 2)));
+  lines.push(dim('│'));
+  lines.push(dim('│ ') + chalk.red(`'${blockedName}' is on your block list — Claude cannot run this command.`));
+  lines.push(dim('│ ') + chalk.dim(`Run \`wtflag unblock ${blockedName}\` to allow it.`));
+  lines.push(dim('└' + '─'.repeat(W + 1) + '┘'));
+  return lines.join('\n');
+}
+
+export function explain(commandString, { mutelist } = {}) {
+  const segments = tokenize(commandString)
+    .filter(Boolean)
+    .filter(seg => !mutelist?.has(effectiveCommand(seg)));
   if (!segments.length) return null;
 
   const results = segments.map(resolveSegment);

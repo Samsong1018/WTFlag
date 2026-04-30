@@ -25,6 +25,12 @@ Claude Code runs shell commands. wtflag intercepts each one via a `PreToolUse` h
 - **Flag descriptions** — each flag's meaning pulled live from `--help` output
 - **Danger warnings** — `DANGER` / `WARNING` badges for destructive commands before they run
 
+Beyond explaining commands, wtflag also lets you control what Claude is allowed to run:
+
+- **Mute** commands whose explanations you don't need
+- **Block** commands you never want Claude to run
+- **Allow** commands so Claude never has to ask for permission
+
 It works entirely offline after setup — no network calls, no AI, no external APIs at runtime.
 
 ---
@@ -55,14 +61,47 @@ Restart Claude Code. wtflag will now explain every Bash command Claude runs.
 
 ## Commands
 
+### Setup
+
 | Command | Description |
 |---|---|
 | `wtflag install` | Adds the `PreToolUse` hook to `~/.claude/settings.json` |
 | `wtflag uninstall` | Removes the hook |
-| `wtflag explain <cmd>` | Manually explain a command string |
-| `wtflag hook` | Hook entrypoint — reads Claude Code's Bash tool JSON from stdin |
-| `wtflag watch` | Opens a watcher terminal — explanations stream here as Claude works |
 | `wtflag update-db` | Re-downloads and rebuilds the tldr-pages database |
+
+### Explanations
+
+| Command | Description |
+|---|---|
+| `wtflag explain <cmd>` | Manually explain a command string |
+| `wtflag watch` | Opens a watcher terminal — explanations stream here as Claude works |
+| `wtflag hook` | Hook entrypoint — reads Claude Code's Bash tool JSON from stdin |
+
+### Muting (suppress explanations)
+
+| Command | Description |
+|---|---|
+| `wtflag mute <command>` | Suppress explanations for a command |
+| `wtflag unmute <command>` | Re-enable explanations for a muted command |
+| `wtflag mutelist` | Show all muted commands |
+
+### Blocking (prevent execution)
+
+| Command | Description |
+|---|---|
+| `wtflag block <command>` | Prevent Claude from running a command entirely |
+| `wtflag unblock <command>` | Allow a blocked command to run again |
+| `wtflag blocked` | Show all blocked commands |
+
+### Auto-accepting (skip permission prompts)
+
+| Command | Description |
+|---|---|
+| `wtflag allow <command>` | Auto-accept a command — no permission prompt |
+| `wtflag disallow <command>` | Remove auto-accept (permission prompt returns) |
+| `wtflag allow-all` | Auto-accept all Bash commands |
+| `wtflag disallow-all` | Remove allow-all |
+| `wtflag allowed` | Show all auto-accepted commands |
 
 ---
 
@@ -96,6 +135,76 @@ echo '{"tool_input":{"command":"ls -lah /tmp"}}' | NODE_NO_WARNINGS=1 wtflag hoo
 
 ---
 
+## Muting commands
+
+Some commands (like `grep`, `find`, or `ls`) run constantly and their explanations add noise. Muting suppresses the explanation box for those commands while letting them run normally.
+
+```bash
+wtflag mute grep
+wtflag mute find
+wtflag mutelist       # see what's muted
+wtflag unmute grep    # restore explanations
+```
+
+Mute operates per-segment in a pipeline — `grep foo | sort` with `grep` muted will still explain `sort`. `sudo grep` is also muted correctly (the effective command `grep` is what's checked, not `sudo`).
+
+---
+
+## Blocking commands
+
+Blocking prevents Claude from running a command at all. The hook exits with code `2`, which cancels the tool call and sends Claude a message explaining why — Claude will not retry or work around it.
+
+```bash
+wtflag block rm
+wtflag block curl
+wtflag blocked          # see what's blocked
+wtflag unblock rm       # allow it again
+```
+
+When a blocked command is attempted, you'll see:
+
+```
+┌ BLOCKED ─────────────────────────────────────────────────────────────┐
+│ rm -rf /var/www
+│
+│ 'rm' is on your block list — Claude cannot run this command.
+│ Run `wtflag unblock rm` to allow it.
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+`sudo rm` is also blocked — the effective command is resolved through `sudo` before checking the block list.
+
+The block check runs before the permission system. Even if `allow-all` is set, a blocked command is still cancelled.
+
+---
+
+## Auto-accepting commands
+
+By default Claude Code prompts for permission before running Bash commands. Auto-accepting adds a command to the `allowedTools` list in `~/.claude/settings.json`, which tells Claude Code to skip the prompt for that command.
+
+```bash
+# Auto-accept specific commands
+wtflag allow git
+wtflag allow npm
+wtflag allow node
+
+# Skip all Bash permission prompts
+wtflag allow-all
+
+# Check what's currently auto-accepted
+wtflag allowed
+
+# Revert
+wtflag disallow git
+wtflag disallow-all
+```
+
+`wtflag allow git` adds `"Bash(command:git*)"` to `allowedTools`, which matches `git`, `git commit`, `git push --force`, and any other `git` invocation. `wtflag allow-all` adds `"Bash"`, which matches everything.
+
+**Note:** Blocked commands still take precedence. If `rm` is on the block list, it will be cancelled even if `allow-all` is enabled, because the hook runs before the permission check.
+
+---
+
 ## How it works
 
 ```
@@ -104,7 +213,14 @@ Claude Code
     ▼
 PreToolUse hook → wtflag hook
     │
+    ├─ Block check
+    │     if any segment matches the block list:
+    │       → BLOCKED box to stderr
+    │       → exit(2) — Claude Code cancels the tool call
+    │       → Claude receives the stderr message as the reason
+    │
     ├─ tokenizer.js     splits shell string into segments, handles pipes/&&/||
+    ├─ mute filter      skips explanation for muted command segments
     ├─ danger.js        checks for destructive patterns → DANGER/WARNING badges
     ├─ tldr.js          looks up command description in SQLite
     ├─ context.js       maps (command, args, flags) → plain-English explanation
@@ -115,10 +231,10 @@ PreToolUse hook → wtflag hook
     │
     ▼
 Original JSON passed through to stdout
-(Claude Code is never blocked)
+(Claude Code proceeds normally)
 ```
 
-The hook always exits 0 and passes the original JSON through to stdout — Claude Code is never interrupted.
+The hook passes the original JSON through to stdout on success. On a block, it exits with code `2` and writes nothing to stdout — Claude Code treats this as a cancelled tool call.
 
 ---
 
@@ -168,6 +284,30 @@ For commands not in the list, wtflag falls back to the tldr-pages description an
 
 ---
 
+## Configuration
+
+wtflag stores its mute and block lists in `~/.config/wtflag/config.json`:
+
+```json
+{
+  "mutelist": ["grep", "find"],
+  "blocked": ["rm", "curl"]
+}
+```
+
+Auto-accept entries are written directly to `~/.claude/settings.json` under `allowedTools`, which is the native Claude Code mechanism:
+
+```json
+{
+  "allowedTools": [
+    "Bash(command:git*)",
+    "Bash(command:npm*)"
+  ]
+}
+```
+
+---
+
 ## Data sources
 
 | Source | What it provides |
@@ -186,14 +326,16 @@ The database is not checked into the repo. It is built automatically on `npm ins
 ```
 bin/wtflag.js          CLI entry point (commander)
 src/
-  hook.js              PreToolUse hook handler
-  explain.js           Formats the explanation box (chalk)
+  hook.js              PreToolUse hook handler — block check, explain, pass-through
+  explain.js           Formats explanation and BLOCKED boxes (chalk)
   tokenizer.js         Shell string splitter — handles quotes, pipes, &&, ||
   tldr.js              SQLite wrapper for db/tldr.db
   flags.js             Runs `command --help` and matches flag descriptions
   danger.js            Detects destructive commands, renders DANGER/WARNING badges
   context.js           Maps (command, subcommand, args, flags) → human-readable context
-  installer.js         Reads/writes ~/.claude/settings.json
+  config.js            Reads/writes ~/.config/wtflag/config.json (mute and block lists)
+  allow.js             Reads/writes allowedTools in ~/.claude/settings.json
+  installer.js         Adds/removes the PreToolUse hook in ~/.claude/settings.json
   ipc.js               Unix socket path + helpers for watcher IPC
   watcher.js           Long-running socket server — receives and displays explanations
 scripts/
@@ -219,7 +361,7 @@ db/
 wtflag uninstall
 ```
 
-This removes the hook entry from `~/.claude/settings.json`. Claude Code will no longer call wtflag.
+This removes the hook entry from `~/.claude/settings.json`. Claude Code will no longer call wtflag. Your mute and block lists remain in `~/.config/wtflag/config.json` and any `allowedTools` entries added via `wtflag allow` remain in `~/.claude/settings.json` — remove them manually if needed.
 
 ---
 

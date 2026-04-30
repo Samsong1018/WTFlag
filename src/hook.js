@@ -1,7 +1,9 @@
 import net from 'node:net';
 import { existsSync } from 'node:fs';
-import { explain } from './explain.js';
+import { explain, renderBlocked, effectiveCommand } from './explain.js';
 import { SOCKET_PATH } from './ipc.js';
+import { getMutelist, getBlocklist } from './config.js';
+import { tokenize } from './tokenizer.js';
 
 export async function runHook() {
   let raw = '';
@@ -19,12 +21,30 @@ export async function runHook() {
   const command = data?.tool_input?.command;
 
   if (command) {
+    // Check block list first — exit(2) cancels the tool call and feeds
+    // the stderr message back to Claude as the reason it was blocked.
     try {
-      const output = explain(command);
+      const blocklist = getBlocklist();
+      if (blocklist.size > 0) {
+        const segments = tokenize(command).filter(Boolean);
+        const hit = segments.find(seg => blocklist.has(effectiveCommand(seg)));
+        if (hit) {
+          const name = effectiveCommand(hit);
+          const box = renderBlocked(name, command);
+          process.stderr.write('\n' + box + '\n\n');
+          sendToWatcher(box);
+          process.exit(2);
+        }
+      }
+    } catch {
+      // Never block Claude Code due to wtflag errors
+    }
+
+    // Show explanation (skipping any muted segments)
+    try {
+      const output = explain(command, { mutelist: getMutelist() });
       if (output) {
-        // Always write to stderr as fallback (visible in ctrl-o)
         process.stderr.write('\n' + output + '\n\n');
-        // Send to watcher terminal if running
         sendToWatcher(output);
       }
     } catch {
