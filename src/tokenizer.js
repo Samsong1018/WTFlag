@@ -1,3 +1,12 @@
+// Windows cmd.exe commands that use /FLAG style options
+const WINDOWS_COMMANDS = new Set([
+  'dir', 'del', 'erase', 'copy', 'xcopy', 'robocopy', 'move', 'type', 'ren', 'rename',
+  'rd', 'rmdir', 'cls', 'where', 'tasklist', 'taskkill', 'ipconfig', 'netstat',
+  'reg', 'sc', 'icacls', 'attrib', 'chkdsk', 'sfc', 'msiexec', 'wmic', 'cmd',
+  'winget', 'choco', 'chocolatey', 'powershell', 'pwsh', 'findstr',
+  'cacls', 'cipher', 'compact', 'expand', 'fc', 'format', 'label', 'net',
+]);
+
 // Splits a shell string into discrete segments (handles pipes, &&, ;)
 // then parses each segment into { command, subcommand, flags, args, raw }
 
@@ -78,6 +87,7 @@ function parseSegment(segment) {
   let subcommand = null;
   let expectValue = false;
   let skipNext = false;   // used to swallow the filename after a redirect op
+  const isWindowsCmd = WINDOWS_COMMANDS.has(command.toLowerCase());
 
   for (const token of tokens.slice(1)) {
     if (skipNext) { skipNext = false; continue; }
@@ -99,6 +109,10 @@ function parseSegment(segment) {
       }
       // Flags like -o that typically take a value (heuristic: short flag, no =)
       if (/^-[a-zA-Z]$/.test(token)) expectValue = false; // can't know without help text
+    } else if (isWindowsCmd && /^\/[A-Za-z][A-Za-z0-9]*(?::[^\s]*)?$/.test(token) && !token.includes('/', 1)) {
+      // Windows cmd.exe style flags: /S /Q /PID /FLUSHDNS /F:pattern etc.
+      // Only applied for known Windows commands to avoid treating Unix paths as flags
+      flags.push(token.toUpperCase());
     } else if (!subcommand && /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(token)) {
       subcommand = token;
     } else {

@@ -84,10 +84,16 @@ export async function runHook() {
 }
 
 function sendToWatcher(output) {
-  // On Windows, named pipes can't be checked with existsSync — just try to connect
+  // On Windows, named pipes can't be checked with existsSync — just try to connect.
+  // Wrap in try/catch because createConnection can throw synchronously on Windows
+  // if the pipe doesn't exist before the error handler is attached.
   if (!isWindows && !existsSync(SOCKET_PATH)) return;
-  const socket = net.createConnection(SOCKET_PATH);
-  const timer = setTimeout(() => socket.destroy(), 300);
-  socket.on('connect', () => { clearTimeout(timer); socket.end(output); });
-  socket.on('error', () => clearTimeout(timer));
+  try {
+    const socket = net.createConnection(SOCKET_PATH);
+    const timer = setTimeout(() => socket.destroy(), 300);
+    socket.on('connect', () => { clearTimeout(timer); socket.end(output); });
+    socket.on('error', () => clearTimeout(timer));
+  } catch {
+    // Watcher not running — silently skip
+  }
 }

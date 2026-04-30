@@ -38,4 +38,6 @@ export function startWatcher() {
 
   process.on('SIGINT', () => cleanup(0));
   process.on('SIGTERM', () => cleanup(0));
+  // SIGTERM is not reliably delivered on Windows — use 'exit' as a fallback
+  process.on('exit', () => { try { server.close(); } catch {} });
 }

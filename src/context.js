@@ -1,3 +1,6 @@
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+
 function trunc(str, max = 30) {
   return str.length > max ? str.slice(0, max - 1) + '…' : str;
 }
@@ -8,6 +11,14 @@ const SHELL_CMD_NAMES = new Set([
   'ls', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'chmod', 'tar', 'zip', 'ssh',
   'rsync', 'docker', 'python', 'python3', 'node', 'cargo', 'apt', 'apt-get',
   'systemctl', 'bash', 'sh', 'echo', 'env', 'export', 'yarn', 'npx',
+  // Windows
+  'dir', 'del', 'copy', 'move', 'type', 'tasklist', 'taskkill', 'ipconfig',
+  'netstat', 'reg', 'sc', 'winget', 'choco', 'powershell', 'pwsh',
+  // PowerShell
+  'Get-ChildItem', 'Remove-Item', 'Copy-Item', 'Move-Item', 'Get-Content',
+  'Get-Process', 'Stop-Process', 'Invoke-WebRequest', 'Select-String',
+  // macOS
+  'brew', 'open', 'pbcopy', 'pbpaste',
 ]);
 
 function looksLikeShellCommand(str) {
@@ -91,7 +102,7 @@ const HANDLERS = {
     const isGlobal = flags.includes('--global');
     const isUnset = flags.includes('--unset');
     const isList = flags.includes('-l') || flags.includes('--list');
-    const scope = isGlobal ? 'global (~/.gitconfig) ' : '';
+    const scope = isGlobal ? `global (${join(homedir(), '.gitconfig')}) ` : '';
     if (isList) return `lists all ${scope}git settings`;
     if (isUnset && args[0]) return `removes ${scope}setting '${args[0]}'`;
     if (args[0] && args[1]) return `sets ${scope}'${args[0]}' = '${trunc(args[1], 30)}'`;
@@ -981,6 +992,528 @@ const HANDLERS = {
   'docker stop': (args) => {
     const container = args.find(a => !a.startsWith('-'));
     return container ? `gracefully stops '${container}' — sends SIGTERM then SIGKILL after a timeout` : null;
+  },
+
+  // --- Windows cmd.exe ---
+  'dir': (args, flags) => {
+    const path = args.find(a => !/^\//.test(a));
+    const isAll = flags.includes('/A');
+    const isRecurse = flags.includes('/S');
+    const isBare = flags.includes('/B');
+    const mods = [isAll && 'including hidden files', isRecurse && 'recursively', isBare && 'bare names only'].filter(Boolean);
+    const modStr = mods.length ? ` — ${mods.join(', ')}` : '';
+    return path ? `lists contents of '${path}'${modStr}` : `lists the current directory${modStr}`;
+  },
+  'del': (args, flags) => {
+    const isRecurse = flags.includes('/S');
+    const isForce = flags.includes('/F');
+    const targets = args.filter(a => !/^\//.test(a));
+    const mods = [isRecurse && 'including subdirectories', isForce && 'force read-only files'].filter(Boolean);
+    const modStr = mods.length ? ` (${mods.join(', ')})` : '';
+    if (targets.length === 1) return `permanently deletes '${targets[0]}'${modStr} — no Recycle Bin`;
+    if (targets.length > 1) return `permanently deletes ${targets.length} items${modStr} — no Recycle Bin`;
+    return null;
+  },
+  'erase': (args, flags) => {
+    const targets = args.filter(a => !/^\//.test(a));
+    if (targets.length === 1) return `permanently deletes '${targets[0]}' — no Recycle Bin`;
+    if (targets.length > 1) return `permanently deletes ${targets.length} items — no Recycle Bin`;
+    return null;
+  },
+  'copy': (args, flags) => {
+    const pos = args.filter(a => !/^\//.test(a));
+    if (pos.length >= 2) return `copies '${pos[0]}' to '${pos[pos.length - 1]}'`;
+    return null;
+  },
+  'xcopy': (args, flags) => {
+    const pos = args.filter(a => !/^\//.test(a));
+    const isSubdirs = flags.includes('/S') || flags.includes('/E');
+    const isMirror = flags.includes('/MIR');
+    if (pos.length >= 2) return `copies '${pos[0]}' to '${pos[1]}'${isSubdirs ? ' including subdirectories' : ''}${isMirror ? ' (mirror — deletes extras at destination)' : ''}`;
+    return null;
+  },
+  'robocopy': (args, flags) => {
+    const pos = args.filter(a => !/^\//.test(a));
+    const isMirror = flags.includes('/MIR');
+    const isMove = flags.includes('/MOV') || flags.includes('/MOVE');
+    if (pos.length >= 2) {
+      const verb = isMove ? 'moves' : isMirror ? 'mirrors' : 'syncs';
+      return `${verb} '${pos[0]}' to '${pos[1]}' — only copies changed files`;
+    }
+    return null;
+  },
+  'move': (args) => {
+    const pos = args.filter(a => !/^\//.test(a));
+    if (pos.length >= 2) return `moves '${pos[0]}' to '${pos[pos.length - 1]}'`;
+    return null;
+  },
+  'type': (args) => {
+    const file = args.find(a => !/^\//.test(a));
+    return file ? `prints the contents of '${file}' to the terminal` : null;
+  },
+  'ren': (args) => {
+    const [src, dest] = args.filter(a => !/^\//.test(a));
+    return src && dest ? `renames '${src}' to '${dest}'` : null;
+  },
+  'rename': (args) => {
+    const [src, dest] = args.filter(a => !/^\//.test(a));
+    return src && dest ? `renames '${src}' to '${dest}'` : null;
+  },
+  'rd': (args, flags) => {
+    const isRecurse = flags.includes('/S');
+    const dir = args.find(a => !/^\//.test(a));
+    return dir ? `removes directory '${dir}'${isRecurse ? ' and all its contents — cannot be undone' : ' — must be empty'}` : null;
+  },
+  'cls': () => 'clears the terminal screen',
+  'where': (args) => {
+    const cmd = args.find(a => !/^\//.test(a));
+    return cmd ? `finds the full path of '${cmd}' — shows which version runs when you type the command` : null;
+  },
+  'tasklist': (args, flags) => {
+    const hasFi = flags.includes('/FI');
+    const filter = hasFi ? args[0] : null;
+    return filter ? `lists running processes matching filter '${trunc(filter, 30)}'` : 'lists all currently running processes — shows PID, session, and memory usage';
+  },
+  'taskkill': (args, flags) => {
+    const isForce = flags.includes('/F');
+    const hasPid = flags.includes('/PID');
+    const hasIm = flags.includes('/IM');
+    const value = args[0];
+    const force = isForce ? ' (forced — no cleanup)' : ' (graceful shutdown)';
+    if (hasPid && value) return `terminates process with PID ${value}${force}`;
+    if (hasIm && value) return `terminates all processes named '${value}'${force}`;
+    if (value) return `terminates '${value}'${force}`;
+    return null;
+  },
+  'ipconfig': (args, flags) => {
+    const isAll = flags.includes('/ALL') || flags.includes('/all');
+    const isFlush = flags.includes('/FLUSHDNS') || flags.includes('/flushdns');
+    const isRelease = flags.includes('/RELEASE') || flags.includes('/release');
+    const isRenew = flags.includes('/RENEW') || flags.includes('/renew');
+    if (isFlush) return 'clears the DNS resolver cache — fixes stale DNS entries';
+    if (isRelease) return 'releases the current DHCP IP address';
+    if (isRenew) return 'requests a new IP address from the DHCP server';
+    if (isAll) return 'shows full network config — IP, subnet, gateway, DNS, MAC address for every adapter';
+    return 'shows IP addresses for all active network adapters';
+  },
+  'netstat': (args, flags) => {
+    const isAll = flags.includes('/A') || flags.includes('-a');
+    const isNumeric = flags.includes('/N') || flags.includes('-n');
+    const isOwner = flags.includes('/O') || flags.includes('-o');
+    const mods = [isAll && 'all connections and listening ports', isNumeric && 'numeric addresses', isOwner && 'with owning PID'].filter(Boolean);
+    return mods.length ? `shows network connections — ${mods.join(', ')}` : 'shows active network connections';
+  },
+  'reg add': (args) => {
+    const key = args[0];
+    return key ? `creates or updates registry key '${trunc(key, 50)}'` : null;
+  },
+  'reg delete': (args) => {
+    const key = args[0];
+    return key ? `permanently deletes registry key '${trunc(key, 50)}'` : null;
+  },
+  'reg query': (args) => {
+    const key = args[0];
+    return key ? `reads values from registry key '${trunc(key, 50)}'` : null;
+  },
+  'reg export': (args) => {
+    const [key, file] = args;
+    return key && file ? `exports registry key '${trunc(key, 40)}' to '${file}'` : null;
+  },
+  'sc start': (args) => {
+    const svc = args[0];
+    return svc ? `starts Windows service '${svc}'` : null;
+  },
+  'sc stop': (args) => {
+    const svc = args[0];
+    return svc ? `stops Windows service '${svc}'` : null;
+  },
+  'sc query': (args) => {
+    const svc = args[0];
+    return svc ? `shows status of service '${svc}'` : 'lists all running Windows services';
+  },
+  'sc config': (args) => {
+    const svc = args[0];
+    return svc ? `changes startup configuration for service '${svc}'` : null;
+  },
+  'icacls': (args, flags) => {
+    const path = args.find(a => !/^\//.test(a));
+    const hasGrant = flags.includes('/GRANT') || flags.includes('/grant');
+    const hasDeny = flags.includes('/DENY') || flags.includes('/deny');
+    const hasReset = flags.includes('/RESET') || flags.includes('/reset');
+    if (!path) return null;
+    if (hasGrant) return `grants permissions on '${trunc(path, 40)}'`;
+    if (hasDeny) return `denies permissions on '${trunc(path, 40)}'`;
+    if (hasReset) return `resets permissions on '${trunc(path, 40)}' to inherited defaults`;
+    return `shows permissions for '${trunc(path, 40)}'`;
+  },
+  'attrib': (args) => {
+    const file = args.find(a => !/^\//.test(a) && !a.startsWith('+') && !a.startsWith('-'));
+    return file ? `shows or changes file attributes (hidden, read-only, system, archive) for '${file}'` : null;
+  },
+  'winget install': (args, flags) => {
+    const pkg = args.find(a => !/^\//.test(a));
+    return pkg ? `installs '${pkg}' from the Windows Package Manager — downloads and runs the installer` : null;
+  },
+  'winget uninstall': (args) => {
+    const pkg = args.find(a => !/^\//.test(a));
+    return pkg ? `uninstalls '${pkg}'` : null;
+  },
+  'winget upgrade': (args, flags) => {
+    const isAll = flags.includes('--all') || args.includes('--all');
+    const pkg = args.find(a => !a.startsWith('-') && !/^\//.test(a));
+    if (isAll) return 'upgrades all installed packages to their latest versions';
+    return pkg ? `upgrades '${pkg}' to the latest version` : null;
+  },
+  'winget search': (args) => {
+    const query = args[0];
+    return query ? `searches the Windows Package Manager catalog for '${query}'` : null;
+  },
+  'winget list': () => 'lists all installed packages tracked by Windows Package Manager',
+  'choco install': (args) => {
+    const pkg = args[0];
+    return pkg ? `installs '${pkg}' via Chocolatey` : null;
+  },
+  'choco uninstall': (args) => {
+    const pkg = args[0];
+    return pkg ? `uninstalls '${pkg}' via Chocolatey` : null;
+  },
+  'choco upgrade': (args) => {
+    const pkg = args[0];
+    return pkg === 'all' ? 'upgrades all Chocolatey packages' : pkg ? `upgrades '${pkg}' via Chocolatey` : null;
+  },
+  'choco list': () => 'lists all locally installed Chocolatey packages',
+  'powershell': (args, flags) => {
+    const isCommand = flags.includes('-Command') || flags.includes('-c');
+    const isFile = flags.includes('-File') || flags.includes('-f');
+    const script = args.find(a => !a.startsWith('-'));
+    if (isCommand && script) return `runs PowerShell command: ${trunc(script, 60)}`;
+    if (isFile && script) return `runs PowerShell script '${script}'`;
+    return 'opens an interactive PowerShell session';
+  },
+  'pwsh': (args, flags) => {
+    const isCommand = flags.includes('-Command') || flags.includes('-c');
+    const script = args.find(a => !a.startsWith('-'));
+    if (isCommand && script) return `runs PowerShell 7 command: ${trunc(script, 60)}`;
+    return 'opens an interactive PowerShell 7 session';
+  },
+
+  // --- PowerShell cmdlets ---
+  'Get-ChildItem': (args, flags) => {
+    const path = args.find(a => !a.startsWith('-'));
+    const isRecurse = flags.includes('-Recurse') || flags.includes('-r');
+    const isHidden = flags.includes('-Hidden') || flags.includes('-Force');
+    const filter = flags.includes('-Filter') ? args.find(a => !a.startsWith('-') && a !== path) : null;
+    const mods = [isRecurse && 'recursively', isHidden && 'including hidden items', filter && `matching '${filter}'`].filter(Boolean);
+    const modStr = mods.length ? ` — ${mods.join(', ')}` : '';
+    return path ? `lists contents of '${path}'${modStr}` : `lists the current directory${modStr}`;
+  },
+  'Remove-Item': (args, flags) => {
+    const path = args.find(a => !a.startsWith('-'));
+    const isRecurse = flags.includes('-Recurse') || flags.includes('-r');
+    const isForce = flags.includes('-Force');
+    const mods = [isRecurse && 'recursively', isForce && 'including read-only items'].filter(Boolean);
+    const modStr = mods.length ? ` (${mods.join(', ')})` : '';
+    return path ? `permanently deletes '${path}'${modStr} — no Recycle Bin` : null;
+  },
+  'Copy-Item': (args, flags) => {
+    const pos = args.filter(a => !a.startsWith('-'));
+    const isRecurse = flags.includes('-Recurse') || flags.includes('-r');
+    if (pos.length >= 2) return `${isRecurse ? 'recursively ' : ''}copies '${pos[0]}' to '${pos[1]}'`;
+    return null;
+  },
+  'Move-Item': (args) => {
+    const pos = args.filter(a => !a.startsWith('-'));
+    if (pos.length >= 2) return `moves '${pos[0]}' to '${pos[1]}'`;
+    return null;
+  },
+  'Get-Content': (args, flags) => {
+    const path = args.find(a => !a.startsWith('-'));
+    const isTail = flags.includes('-Tail') || flags.includes('-Last');
+    const n = args.find(a => /^\d+$/.test(a));
+    if (isTail && n && path) return `shows the last ${n} lines of '${path}'`;
+    return path ? `reads and prints the contents of '${path}'` : null;
+  },
+  'Set-Content': (args) => {
+    const path = args.find(a => !a.startsWith('-'));
+    return path ? `writes content to '${path}' — overwrites any existing content` : null;
+  },
+  'Add-Content': (args) => {
+    const path = args.find(a => !a.startsWith('-'));
+    return path ? `appends content to '${path}'` : null;
+  },
+  'Get-Process': (args, flags) => {
+    const name = args.find(a => !a.startsWith('-'));
+    return name ? `shows running processes named '${name}' — PID, CPU, and memory` : 'lists all running processes with PID, CPU, and memory usage';
+  },
+  'Stop-Process': (args, flags) => {
+    const isForce = flags.includes('-Force');
+    const name = flags.includes('-Name') ? args.find(a => !a.startsWith('-')) : null;
+    const id = flags.includes('-Id') ? args.find(a => /^\d+$/.test(a)) : null;
+    const force = isForce ? ' — forced, no cleanup' : '';
+    if (id) return `terminates process with PID ${id}${force}`;
+    if (name) return `terminates all processes named '${name}'${force}`;
+    const target = args.find(a => !a.startsWith('-'));
+    return target ? `terminates '${target}'${force}` : null;
+  },
+  'Invoke-WebRequest': (args, flags) => {
+    const url = args.find(a => !a.startsWith('-') && (a.includes('://') || a.includes('.')));
+    const method = flags.includes('-Method') ? args.find(a => /^(GET|POST|PUT|DELETE|PATCH)$/i.test(a)) : null;
+    const outFile = flags.includes('-OutFile') ? args.find(a => !a.startsWith('-') && a !== url) : null;
+    if (!url) return null;
+    const base = method ? `sends HTTP ${method.toUpperCase()} to '${trunc(url, 45)}'` : `downloads '${trunc(url, 45)}'`;
+    return outFile ? `${base} and saves to '${outFile}'` : base;
+  },
+  'Invoke-Expression': (args) => {
+    const expr = args[0];
+    return expr ? `evaluates and runs the string as a PowerShell command: ${trunc(expr, 50)}` : null;
+  },
+  'Get-Service': (args) => {
+    const name = args.find(a => !a.startsWith('-'));
+    return name ? `shows the status of Windows service '${name}'` : 'lists all Windows services with their status';
+  },
+  'Start-Service': (args) => {
+    const name = args.find(a => !a.startsWith('-'));
+    return name ? `starts Windows service '${name}'` : null;
+  },
+  'Stop-Service': (args) => {
+    const name = args.find(a => !a.startsWith('-'));
+    return name ? `stops Windows service '${name}'` : null;
+  },
+  'Restart-Service': (args) => {
+    const name = args.find(a => !a.startsWith('-'));
+    return name ? `restarts Windows service '${name}'` : null;
+  },
+  'Select-String': (args, flags) => {
+    const isRecurse = flags.includes('-Recurse') || flags.includes('-r');
+    const isCaseInsensitive = flags.includes('-CaseSensitive') ? false : true;
+    const pattern = args[0];
+    const path = args[1];
+    if (pattern && path) return `searches '${path}' for lines matching '${trunc(pattern, 30)}'${isRecurse ? ' recursively' : ''}`;
+    if (pattern) return `filters piped input for lines matching '${trunc(pattern, 30)}'`;
+    return null;
+  },
+  'Set-Location': (args) => {
+    const path = args.find(a => !a.startsWith('-'));
+    return path ? `changes the current directory to '${path}'` : 'changes to the home directory';
+  },
+  'Get-Location': () => 'shows the current directory path',
+  'New-Item': (args, flags) => {
+    const path = args.find(a => !a.startsWith('-'));
+    const typeIdx = flags.indexOf('-ItemType');
+    const type = typeIdx >= 0 ? args[typeIdx] : null;
+    if (!path) return null;
+    if (type?.toLowerCase() === 'directory') return `creates directory '${path}'`;
+    if (type?.toLowerCase() === 'file') return `creates empty file '${path}'`;
+    return `creates '${path}'`;
+  },
+  'Test-Path': (args) => {
+    const path = args.find(a => !a.startsWith('-'));
+    return path ? `tests whether '${path}' exists — returns true or false` : null;
+  },
+  'Get-Command': (args) => {
+    const name = args.find(a => !a.startsWith('-'));
+    return name ? `finds the command or executable named '${name}' and shows its full path` : 'lists all available commands in the current session';
+  },
+  'Write-Output': (args) => {
+    const text = args.join(' ');
+    return text ? `outputs '${trunc(text, 50)}' to the pipeline` : null;
+  },
+  'Write-Host': (args) => {
+    const text = args.join(' ');
+    return text ? `prints '${trunc(text, 50)}' directly to the terminal (not the pipeline)` : null;
+  },
+  'Get-Help': (args) => {
+    const cmd = args.find(a => !a.startsWith('-'));
+    return cmd ? `shows the help documentation for '${cmd}'` : 'shows the PowerShell help system';
+  },
+  'Measure-Object': (args, flags) => {
+    const isLines = flags.includes('-Line');
+    const isWords = flags.includes('-Word');
+    const isChars = flags.includes('-Character');
+    const what = isLines ? 'lines' : isWords ? 'words' : isChars ? 'characters' : 'items';
+    return `counts ${what} in the piped input`;
+  },
+  'Sort-Object': (args, flags) => {
+    const isDescending = flags.includes('-Descending');
+    const isUnique = flags.includes('-Unique');
+    const prop = args.find(a => !a.startsWith('-'));
+    const mods = [prop && `by '${prop}'`, isDescending && 'descending', isUnique && 'removing duplicates'].filter(Boolean);
+    return mods.length ? `sorts piped objects ${mods.join(', ')}` : 'sorts piped objects';
+  },
+  'Where-Object': (args) => {
+    const filter = args[0];
+    return filter ? `filters piped objects keeping only those where: ${trunc(filter, 50)}` : 'filters piped objects by a condition';
+  },
+  'Select-Object': (args, flags) => {
+    const isFirst = flags.includes('-First');
+    const isLast = flags.includes('-Last');
+    const n = args.find(a => /^\d+$/.test(a));
+    const props = args.filter(a => !a.startsWith('-') && !/^\d+$/.test(a));
+    if (isFirst && n) return `takes the first ${n} objects from the pipeline`;
+    if (isLast && n) return `takes the last ${n} objects from the pipeline`;
+    if (props.length) return `selects properties: ${props.join(', ')}`;
+    return 'selects specific properties from piped objects';
+  },
+  'Format-List': () => 'formats piped objects as a vertical property list — one property per line',
+  'Format-Table': () => 'formats piped objects as a table — columns for each property',
+  'Import-Module': (args) => {
+    const mod = args.find(a => !a.startsWith('-'));
+    return mod ? `loads PowerShell module '${mod}' into the current session` : null;
+  },
+  'Install-Module': (args, flags) => {
+    const mod = args.find(a => !a.startsWith('-'));
+    const isForce = flags.includes('-Force');
+    return mod ? `installs PowerShell module '${mod}' from the gallery${isForce ? ' (overwrite if exists)' : ''}` : null;
+  },
+  // Common PowerShell aliases
+  'gci': (args, flags) => {
+    const path = args.find(a => !a.startsWith('-'));
+    const isRecurse = flags.includes('-Recurse') || flags.includes('-r');
+    return path ? `lists contents of '${path}'${isRecurse ? ' recursively' : ''}` : `lists the current directory${isRecurse ? ' recursively' : ''}`;
+  },
+  'ri': (args, flags) => {
+    const path = args.find(a => !a.startsWith('-'));
+    const isRecurse = flags.includes('-Recurse') || flags.includes('-r');
+    return path ? `permanently deletes '${path}'${isRecurse ? ' recursively' : ''} — no Recycle Bin` : null;
+  },
+  'gi': (args) => {
+    const path = args.find(a => !a.startsWith('-'));
+    return path ? `gets the filesystem item at '${path}'` : null;
+  },
+  'ni': (args, flags) => {
+    const path = args.find(a => !a.startsWith('-'));
+    const typeIdx = flags.indexOf('-ItemType');
+    const type = typeIdx >= 0 ? args[typeIdx] : null;
+    if (!path) return null;
+    if (type?.toLowerCase() === 'directory') return `creates directory '${path}'`;
+    return type ? `creates ${type.toLowerCase()} '${path}'` : `creates item '${path}'`;
+  },
+  'gc': (args) => {
+    const path = args.find(a => !a.startsWith('-'));
+    return path ? `reads and prints the contents of '${path}'` : null;
+  },
+  'iwr': (args) => {
+    const url = args.find(a => !a.startsWith('-') && a.includes('://'));
+    return url ? `downloads from '${trunc(url, 50)}'` : null;
+  },
+  'iex': (args) => {
+    const expr = args[0];
+    return expr ? `evaluates and runs: ${trunc(expr, 50)}` : null;
+  },
+  'gsv': (args) => {
+    const name = args.find(a => !a.startsWith('-'));
+    return name ? `shows status of Windows service '${name}'` : 'lists all Windows services';
+  },
+  'gps': (args) => {
+    const name = args.find(a => !a.startsWith('-'));
+    return name ? `shows processes named '${name}'` : 'lists all running processes';
+  },
+  'spps': (args, flags) => {
+    const isForce = flags.includes('-Force');
+    const target = args.find(a => !a.startsWith('-'));
+    return target ? `terminates process '${target}'${isForce ? ' (forced)' : ''}` : null;
+  },
+  'sl': (args) => {
+    const path = args.find(a => !a.startsWith('-'));
+    return path ? `changes directory to '${path}'` : null;
+  },
+  'gl': () => 'shows the current directory path',
+  'gcm': (args) => {
+    const name = args.find(a => !a.startsWith('-'));
+    return name ? `finds command '${name}' and shows its full path` : 'lists all available commands';
+  },
+  'sls': (args, flags) => {
+    const pattern = args[0];
+    const path = args[1];
+    if (pattern && path) return `searches '${path}' for lines matching '${trunc(pattern, 30)}'`;
+    return pattern ? `filters input for lines matching '${trunc(pattern, 30)}'` : null;
+  },
+
+  // --- macOS ---
+  'brew install': (args, flags) => {
+    const isCask = flags.includes('--cask');
+    const pkgs = args.filter(a => !a.startsWith('-'));
+    if (!pkgs.length) return null;
+    const type = isCask ? 'GUI app' : 'formula';
+    return pkgs.length === 1 ? `installs '${pkgs[0]}' ${type} via Homebrew` : `installs ${pkgs.length} Homebrew packages`;
+  },
+  'brew uninstall': (args) => {
+    const pkg = args.find(a => !a.startsWith('-'));
+    return pkg ? `uninstalls '${pkg}' from Homebrew` : null;
+  },
+  'brew update': () => 'fetches the latest Homebrew package index — run before upgrade to get the latest versions',
+  'brew upgrade': (args) => {
+    const pkg = args.find(a => !a.startsWith('-'));
+    return pkg ? `upgrades '${pkg}' to the latest version` : 'upgrades all outdated Homebrew packages';
+  },
+  'brew search': (args) => {
+    const query = args.find(a => !a.startsWith('-'));
+    return query ? `searches Homebrew for formulae and casks matching '${query}'` : null;
+  },
+  'brew list': (args, flags) => {
+    const isCask = flags.includes('--cask');
+    return `lists all installed Homebrew ${isCask ? 'casks (GUI apps)' : 'formulae'}`;
+  },
+  'brew info': (args) => {
+    const pkg = args.find(a => !a.startsWith('-'));
+    return pkg ? `shows details for '${pkg}' — version, dependencies, and install status` : null;
+  },
+  'brew doctor': () => 'checks your Homebrew installation for common problems',
+  'brew tap': (args) => {
+    const repo = args.find(a => !a.startsWith('-'));
+    return repo ? `adds '${repo}' as a Homebrew tap — gives access to its additional formulae` : 'lists all active Homebrew taps';
+  },
+  'open': (args, flags) => {
+    const isApp = flags.includes('-a');
+    const appName = isApp ? args.find(a => !a.startsWith('-')) : null;
+    const target = isApp ? args.filter(a => !a.startsWith('-'))[1] : args.find(a => !a.startsWith('-'));
+    if (isApp && appName && target) return `opens '${trunc(target, 40)}' with the '${appName}' app`;
+    if (isApp && appName) return `opens the '${appName}' application`;
+    if (target?.includes('://')) return `opens URL '${trunc(target, 50)}' in the default browser`;
+    if (target) return `opens '${target}' with its default application`;
+    return null;
+  },
+  'pbcopy': () => 'copies stdin to the macOS clipboard — pipe text into this to copy it',
+  'pbpaste': () => 'pastes the macOS clipboard contents to stdout — useful for piping clipboard text',
+  'say': (args, flags) => {
+    const voiceIdx = flags.indexOf('-v');
+    const voice = voiceIdx >= 0 ? args[voiceIdx] : null;
+    const text = args.filter(a => !a.startsWith('-') && a !== voice).join(' ');
+    if (text && voice) return `speaks '${trunc(text, 40)}' using the '${voice}' macOS voice`;
+    if (text) return `speaks '${trunc(text, 50)}' aloud using text-to-speech`;
+    return 'reads text aloud using macOS text-to-speech';
+  },
+  'defaults read': (args) => {
+    const [domain, key] = args.filter(a => !a.startsWith('-'));
+    if (domain && key) return `reads preference key '${key}' from '${domain}'`;
+    if (domain) return `reads all preferences for '${domain}'`;
+    return 'reads all macOS system preferences';
+  },
+  'defaults write': (args) => {
+    const [domain, key, value] = args.filter(a => !a.startsWith('-'));
+    return domain && key && value ? `sets '${key}' = '${trunc(value, 30)}' in '${domain}' preferences` : null;
+  },
+  'defaults delete': (args) => {
+    const [domain, key] = args.filter(a => !a.startsWith('-'));
+    if (domain && key) return `deletes preference key '${key}' from '${domain}'`;
+    return domain ? `deletes all preferences for '${domain}'` : null;
+  },
+  'launchctl load': (args) => {
+    const plist = args.find(a => !a.startsWith('-'));
+    return plist ? `loads and starts the launch agent/daemon defined in '${plist}'` : null;
+  },
+  'launchctl unload': (args) => {
+    const plist = args.find(a => !a.startsWith('-'));
+    return plist ? `stops and unloads the launch agent/daemon '${plist}'` : null;
+  },
+  'launchctl list': () => 'lists all loaded launch agents and daemons with their status',
+  'softwareupdate': (args, flags) => {
+    const isInstall = flags.includes('-i') || flags.includes('--install');
+    const isAll = flags.includes('-a') || flags.includes('--all') || args.includes('-a');
+    const isRecommended = flags.includes('-r') || flags.includes('--recommended');
+    if (isInstall && isAll) return 'downloads and installs all available macOS software updates';
+    if (isInstall && isRecommended) return 'installs only recommended macOS updates';
+    return 'checks for available macOS software updates';
   },
 };
 

@@ -1,4 +1,5 @@
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
+import { isWindows } from './platform.js';
 
 // In-process cache so repeated commands in a session don't re-spawn subprocesses
 const helpCache = new Map();
@@ -18,12 +19,24 @@ function getHelpText(command, subcommand) {
   const key = subcommand ? `${command} ${subcommand}` : command;
   if (helpCache.has(key)) return helpCache.get(key);
 
-  const cmd = subcommand ? `${command} ${subcommand} --help` : `${command} --help`;
+  const args = subcommand ? [subcommand, '--help'] : ['--help'];
   let text = '';
   try {
-    text = execSync(`${cmd} 2>&1`, { timeout: 3000, encoding: 'utf8' });
-  } catch (e) {
-    text = e.stdout ?? '';
+    const result = spawnSync(command, args, { timeout: 3000, encoding: 'utf8' });
+    text = (result.stdout ?? '') + (result.stderr ?? '');
+  } catch {
+    text = '';
+  }
+
+  // On Windows, fall back to /? for native commands that don't understand --help
+  if (isWindows && !text.trim()) {
+    try {
+      const helpArgs = subcommand ? [subcommand, '/?'] : ['/?'];
+      const result = spawnSync(command, helpArgs, { timeout: 3000, encoding: 'utf8', shell: true });
+      text = (result.stdout ?? '') + (result.stderr ?? '');
+    } catch {
+      text = '';
+    }
   }
 
   helpCache.set(key, text);

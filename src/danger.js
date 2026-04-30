@@ -119,6 +119,47 @@ const RULES = [
     level: 'danger',
     message: 'Background recursive deletion — will continue even if terminal closes',
   },
+  // Windows: recursive deletion (PowerShell Remove-Item -Recurse / ri -r)
+  {
+    pattern: /\bRemove-Item\b[^;|&\n]*-(?:Recurse|r\b)|\bri\b[^;|&\n]*-(?:Recurse|r\b)/i,
+    level: 'danger',
+    message: 'Recursive deletion (PowerShell) — files cannot be recovered',
+  },
+  // Windows: recursive cmd.exe deletion
+  {
+    pattern: /\b(?:rd|rmdir)\b[^;|&\n]*\/[Ss]/,
+    level: 'danger',
+    message: 'Recursive directory removal — cannot be undone',
+  },
+  {
+    pattern: /\bdel\b[^;|&\n]*\/[Ss]/i,
+    level: 'danger',
+    message: 'Recursive file deletion (del /s) — files cannot be recovered',
+  },
+  // Windows: disk formatting
+  {
+    pattern: /\bFormat-Volume\b|\bformat\s+[A-Za-z]:\b/i,
+    level: 'danger',
+    message: 'Disk format — destroys all data on the target volume',
+  },
+  // Windows: grant everyone full control (icacls equivalent of chmod 777)
+  {
+    pattern: /\bicacls\b[^;|&\n]*[Ee]veryone[^;|&\n]*:[FfCc]/,
+    level: 'danger',
+    message: 'icacls grants Everyone full control — exposes files to all users',
+  },
+  // Windows: registry deletion
+  {
+    pattern: /\breg\s+delete\b/i,
+    level: 'danger',
+    message: 'Registry deletion — can break Windows components permanently',
+  },
+  // Windows: remote script execution via PowerShell (equivalent of curl | bash)
+  {
+    pattern: /\bInvoke-Expression\b[^;|&\n]*\bInvoke-WebRequest\b|\biex\b[^;|&\n]*\biwr\b|\bInvoke-Expression\b[^;|&\n]*\(.*http/i,
+    level: 'danger',
+    message: 'Executing remote script (PowerShell) — verify the source before running',
+  },
 ];
 
 export function checkDanger(commandString) {

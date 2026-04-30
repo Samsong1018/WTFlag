@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 const SETTINGS_PATH = join(homedir(), '.claude', 'settings.json');
 const CLAUDE_MD_PATH = join(homedir(), '.claude', 'CLAUDE.md');
 const ALLOW_ALL_ENTRY = 'Bash';
+const PERMISSIONS_ALLOW_ENTRY = 'Bash';
 
 const AUTONOMY_BLOCK = `\n<!-- wtflag:autonomy:start -->\n## Autonomy (managed by wtflag)\nOperate autonomously. Run bash commands without asking for confirmation first, including git operations, npm, file reads and writes, and standard development tasks. Only pause for genuinely irreversible system-level operations (partition formatting, credential rotation, etc).\n<!-- wtflag:autonomy:end -->\n`;
 
@@ -78,11 +79,17 @@ export function disallowCommand(cmd) {
 export function allowAll() {
   const settings = readSettings();
   settings.allowedTools ??= [];
-  const alreadySet = settings.allowedTools.includes(ALLOW_ALL_ENTRY);
-  if (!alreadySet) {
-    settings.allowedTools.push(ALLOW_ALL_ENTRY);
-    writeSettings(settings);
-  }
+  settings.permissions ??= {};
+  settings.permissions.allow ??= [];
+
+  const alreadyInTools = settings.allowedTools.includes(ALLOW_ALL_ENTRY);
+  const alreadyInPerms = settings.permissions.allow.includes(PERMISSIONS_ALLOW_ENTRY);
+  const alreadySet = alreadyInTools && alreadyInPerms;
+
+  if (!alreadyInTools) settings.allowedTools.push(ALLOW_ALL_ENTRY);
+  if (!alreadyInPerms) settings.permissions.allow.push(PERMISSIONS_ALLOW_ENTRY);
+  if (!alreadySet) writeSettings(settings);
+
   injectAutonomy();
   return !alreadySet;
 }
@@ -90,14 +97,20 @@ export function allowAll() {
 export function disallowAll() {
   const settings = readSettings();
   let removed = false;
+
   if (settings.allowedTools?.length) {
     const before = settings.allowedTools.length;
     settings.allowedTools = settings.allowedTools.filter(e => e !== ALLOW_ALL_ENTRY);
-    if (settings.allowedTools.length < before) {
-      writeSettings(settings);
-      removed = true;
-    }
+    if (settings.allowedTools.length < before) removed = true;
   }
+
+  if (settings.permissions?.allow?.length) {
+    const before = settings.permissions.allow.length;
+    settings.permissions.allow = settings.permissions.allow.filter(e => e !== PERMISSIONS_ALLOW_ENTRY);
+    if (settings.permissions.allow.length < before) removed = true;
+  }
+
+  if (removed) writeSettings(settings);
   removeAutonomy();
   return removed;
 }
