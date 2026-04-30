@@ -2,8 +2,11 @@ import net from 'node:net';
 import { existsSync } from 'node:fs';
 import { explain, renderBlocked, effectiveCommand } from './explain.js';
 import { SOCKET_PATH } from './ipc.js';
-import { getMutelist, getBlocklist } from './config.js';
+import { matchesPattern } from './config.js';
+import { getEffectiveConfig } from './project-config.js';
 import { tokenize } from './tokenizer.js';
+import { checkDanger } from './danger.js';
+import { appendLog } from './log.js';
 
 export async function runHook() {
   let raw = '';
@@ -13,7 +16,6 @@ export async function runHook() {
   try {
     data = JSON.parse(raw);
   } catch {
-    // Can't parse — pass through untouched so Claude Code isn't blocked
     process.stdout.write(raw);
     return;
   }
@@ -21,28 +23,41 @@ export async function runHook() {
   const command = data?.tool_input?.command;
 
   if (command) {
-    // Check block list first — exit(2) cancels the tool call and feeds
-    // the stderr message back to Claude as the reason it was blocked.
+    const config = getEffectiveConfig(process.cwd());
+
+    // 1. Block by command name
     try {
-      const blocklist = getBlocklist();
-      if (blocklist.size > 0) {
-        const segments = tokenize(command).filter(Boolean);
-        const hit = segments.find(seg => blocklist.has(effectiveCommand(seg)));
-        if (hit) {
-          const name = effectiveCommand(hit);
-          const box = renderBlocked(name, command);
-          process.stderr.write('\n' + box + '\n\n');
-          sendToWatcher(box);
-          process.exit(2);
-        }
+      const segments = tokenize(command).filter(Boolean);
+      const hit = segments.find(seg => config.blocklist.has(effectiveCommand(seg)));
+      if (hit) {
+        const name = effectiveCommand(hit);
+        const box = renderBlocked(name, command, false);
+        process.stderr.write('\n' + box + '\n\n');
+        sendToWatcher(box);
+        appendLog({ command, cwd: process.cwd(), blocked: true, blockedBy: name, blockedType: 'command', danger: [] });
+        process.exit(2);
       }
     } catch {
       // Never block Claude Code due to wtflag errors
     }
 
-    // Show explanation (skipping any muted segments)
+    // 2. Block by pattern
     try {
-      const output = explain(command, { mutelist: getMutelist() });
+      const hit = config.blockPatterns.find(p => matchesPattern(p, command));
+      if (hit) {
+        const box = renderBlocked(hit, command, true);
+        process.stderr.write('\n' + box + '\n\n');
+        sendToWatcher(box);
+        appendLog({ command, cwd: process.cwd(), blocked: true, blockedBy: hit, blockedType: 'pattern', danger: [] });
+        process.exit(2);
+      }
+    } catch {
+      // Never block Claude Code due to wtflag errors
+    }
+
+    // 3. Explain (skips muted segments)
+    try {
+      const output = explain(command, { mutelist: config.mutelist });
       if (output) {
         process.stderr.write('\n' + output + '\n\n');
         sendToWatcher(output);
@@ -50,6 +65,18 @@ export async function runHook() {
     } catch {
       // Never block Claude Code due to explainer errors
     }
+
+    // 4. Audit log
+    try {
+      const dangers = checkDanger(command);
+      appendLog({
+        command,
+        cwd: process.cwd(),
+        blocked: false,
+        danger: dangers.map(d => d.message),
+        dangerLevel: dangers[0]?.level ?? null,
+      });
+    } catch {}
   }
 
   process.stdout.write(JSON.stringify(data));

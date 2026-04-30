@@ -12,15 +12,20 @@ export function effectiveCommand(seg) {
   return (seg.command === 'sudo' && seg.subcommand ? seg.subcommand : seg.command).toLowerCase();
 }
 
-export function renderBlocked(blockedName, rawCommand) {
+export function renderBlocked(blockedName, rawCommand, isPattern = false) {
   const W = Math.max(Math.min((process.stdout.columns ?? 80) - 4, 110), 58);
   const dim = chalk.dim;
   const lines = [];
   lines.push(dim('┌') + chalk.bold.red(' BLOCKED ') + dim('─'.repeat(W - 8) + '┐'));
   lines.push(dim('│ ') + chalk.bold.red(truncate(rawCommand, W - 2)));
   lines.push(dim('│'));
-  lines.push(dim('│ ') + chalk.red(`'${blockedName}' is on your block list — Claude cannot run this command.`));
-  lines.push(dim('│ ') + chalk.dim(`Run \`wtflag unblock ${blockedName}\` to allow it.`));
+  if (isPattern) {
+    lines.push(dim('│ ') + chalk.red(`Matches blocked pattern '${blockedName}' — Claude cannot run this command.`));
+    lines.push(dim('│ ') + chalk.dim(`Run \`wtflag unblock "${blockedName}"\` to allow it.`));
+  } else {
+    lines.push(dim('│ ') + chalk.red(`'${blockedName}' is on your block list — Claude cannot run this command.`));
+    lines.push(dim('│ ') + chalk.dim(`Run \`wtflag unblock ${blockedName}\` to allow it.`));
+  }
   lines.push(dim('└' + '─'.repeat(W + 1) + '┘'));
   return lines.join('\n');
 }

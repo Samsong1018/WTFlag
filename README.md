@@ -28,8 +28,11 @@ Claude Code runs shell commands. wtflag intercepts each one via a `PreToolUse` h
 Beyond explaining commands, wtflag also lets you control what Claude is allowed to run:
 
 - **Mute** commands whose explanations you don't need
-- **Block** commands you never want Claude to run
+- **Block** commands you never want Claude to run — by name or by pattern
 - **Allow** commands so Claude never has to ask for permission
+- **Profiles** to switch between named rule sets in one command
+- **Per-project config** to set different rules per repository
+- **Audit log** to keep a permanent record of everything Claude ran
 
 It works entirely offline after setup — no network calls, no AI, no external APIs at runtime.
 
@@ -89,9 +92,9 @@ Restart Claude Code. wtflag will now explain every Bash command Claude runs.
 
 | Command | Description |
 |---|---|
-| `wtflag block <command>` | Prevent Claude from running a command entirely |
-| `wtflag unblock <command>` | Allow a blocked command to run again |
-| `wtflag blocked` | Show all blocked commands |
+| `wtflag block <command or pattern>` | Block a command name or a pattern string |
+| `wtflag unblock <command or pattern>` | Remove a block |
+| `wtflag blocked` | Show all blocked commands and patterns |
 
 ### Auto-accepting (skip permission prompts)
 
@@ -102,6 +105,34 @@ Restart Claude Code. wtflag will now explain every Bash command Claude runs.
 | `wtflag allow-all` | Auto-accept all Bash commands |
 | `wtflag disallow-all` | Remove allow-all |
 | `wtflag allowed` | Show all auto-accepted commands |
+
+### Audit log
+
+| Command | Description |
+|---|---|
+| `wtflag log` | Show last 20 log entries |
+| `wtflag log --all` | Show full history |
+| `wtflag log --blocked` | Show only blocked commands |
+| `wtflag log --danger` | Show only commands that triggered danger warnings |
+| `wtflag log -n <count>` | Show last N entries |
+| `wtflag log --clear` | Clear the log |
+| `wtflag log --path` | Print the log file path |
+
+### Profiles
+
+| Command | Description |
+|---|---|
+| `wtflag profile list` | List all built-in and user profiles |
+| `wtflag profile show <name>` | Show a profile's contents |
+| `wtflag profile save <name>` | Save current config as a named profile |
+| `wtflag profile load <name>` | Apply a profile — replaces current mute/block settings |
+| `wtflag profile delete <name>` | Delete a user-saved profile |
+
+### Per-project config
+
+| Command | Description |
+|---|---|
+| `wtflag project-config` | Show the `.wtflag.json` active for the current directory |
 
 ---
 
@@ -176,6 +207,24 @@ When a blocked command is attempted, you'll see:
 
 The block check runs before the permission system. Even if `allow-all` is set, a blocked command is still cancelled.
 
+### Pattern blocking
+
+If the argument to `wtflag block` contains a space or `*`, it's treated as a pattern rather than a command name:
+
+```bash
+wtflag block "git push --force"    # blocks any force push
+wtflag block "curl * | bash"       # blocks curl-pipe-to-shell
+wtflag block "DROP TABLE *"        # blocks SQL drops
+```
+
+Patterns use glob-style `*` (matches anything) and are tested case-insensitively against the full raw command string. `wtflag blocked` shows both command names and patterns as separate lists.
+
+> **Warning: patterns match the full raw command string.**
+>
+> This means a pattern fires if the text appears _anywhere_ in the command — including inside quoted string arguments. For example, with `rm -rf` in the block list, the command `echo "don't run rm -rf /"` would also be blocked because the literal string `rm -rf` appears inside the quoted argument.
+>
+> This is intentional — it's how wtflag catches dangerous patterns in pipe chains like `curl url | bash` — but it means short or common patterns can produce unexpected matches. If you need to manage the block list while a broad pattern is active, edit `~/.config/wtflag/config.json` directly rather than running `wtflag unblock "..."` through Claude Code.
+
 ---
 
 ## Auto-accepting commands
@@ -205,6 +254,79 @@ wtflag disallow-all
 
 ---
 
+## Audit log
+
+Every command Claude runs is appended to `~/.local/share/wtflag/log.jsonl` with a timestamp, working directory, blocked status, and danger level.
+
+```bash
+wtflag log              # last 20 entries
+wtflag log --blocked    # only blocked attempts
+wtflag log --danger     # only commands that triggered DANGER or WARNING
+wtflag log --all        # full history
+```
+
+Output format:
+
+```
+04/29 14:23:01  [BLOCKED]   rm -rf /var/www                  (~/myproject)
+04/29 14:22:45  [DANGER]    git reset --hard HEAD~3           (~/myproject)
+04/29 14:22:30              git status                        (~/myproject)
+```
+
+The log is append-only JSONL — you can query it directly with `jq` if you need more than the built-in filters. `wtflag log --path` prints the full path.
+
+---
+
+## Profiles
+
+Profiles are named bundles of mute/block/pattern settings. Three built-in profiles ship with wtflag:
+
+| Profile | Description |
+|---|---|
+| `safe` | Blocks destructive commands (`dd`, `mkfs`, `fdisk`) and dangerous patterns (`rm -rf`, force push, `curl \| bash`, etc.) |
+| `dev` | Mutes noisy read-only commands (`grep`, `find`, `ls`, `cat`, `echo`, `pwd`) |
+| `readonly` | Blocks all write operations — `rm`, `mv`, `cp`, `chmod`, `git commit`, `git push`, `npm install`, etc. |
+
+```bash
+wtflag profile list             # see all profiles
+wtflag profile show safe        # inspect a profile before loading
+wtflag profile load safe        # apply it — replaces current mute/block config
+wtflag profile save mysetup     # snapshot your current config as a user profile
+wtflag profile load mysetup     # restore it later
+wtflag profile delete mysetup   # remove a user profile
+```
+
+`profile load` replaces the current mute/block/blockPatterns settings. `allowedTools` in `~/.claude/settings.json` is not touched by profiles. Built-in profiles cannot be deleted or overwritten.
+
+---
+
+## Per-project config
+
+Place a `.wtflag.json` file in any project directory to set rules that apply only when Claude is working in that repo. The hook walks up from its working directory to find it.
+
+```json
+{
+  "blocked": ["kubectl delete", "terraform destroy"],
+  "blockPatterns": ["DROP DATABASE"],
+  "muted": ["eslint", "prettier"]
+}
+```
+
+Project rules merge additively on top of your global config — they can only add restrictions, not remove them. You can also inherit a named profile as the project base:
+
+```json
+{
+  "profile": "readonly",
+  "muted": ["tsc", "eslint"]
+}
+```
+
+```bash
+wtflag project-config    # show which .wtflag.json is active and its contents
+```
+
+---
+
 ## How it works
 
 ```
@@ -213,11 +335,19 @@ Claude Code
     ▼
 PreToolUse hook → wtflag hook
     │
-    ├─ Block check
-    │     if any segment matches the block list:
+    ├─ Load config   global config + project .wtflag.json merged
+    │
+    ├─ Block check (command names)
+    │     if any segment's effective command is in the block list:
     │       → BLOCKED box to stderr
+    │       → logged to audit log
     │       → exit(2) — Claude Code cancels the tool call
-    │       → Claude receives the stderr message as the reason
+    │
+    ├─ Block check (patterns)
+    │     if the raw command string matches any block pattern:
+    │       → BLOCKED box to stderr
+    │       → logged to audit log
+    │       → exit(2) — Claude Code cancels the tool call
     │
     ├─ tokenizer.js     splits shell string into segments, handles pipes/&&/||
     ├─ mute filter      skips explanation for muted command segments
@@ -229,18 +359,20 @@ PreToolUse hook → wtflag hook
          │
          └─ ipc.js      also forwards to watcher.js via Unix socket (if running)
     │
+    ├─ Audit log        command, cwd, blocked status, danger level → log.jsonl
+    │
     ▼
 Original JSON passed through to stdout
 (Claude Code proceeds normally)
 ```
 
-The hook passes the original JSON through to stdout on success. On a block, it exits with code `2` and writes nothing to stdout — Claude Code treats this as a cancelled tool call.
+The hook passes the original JSON through to stdout on success. On a block, it exits with code `2` and writes nothing to stdout — Claude Code treats this as a cancelled tool call and Claude receives the BLOCKED message as context.
 
 ---
 
 ## Danger detection
 
-wtflag checks the full raw command string (including pipe chains) against a set of rules before it runs:
+wtflag checks the full raw command string (including pipe chains) against a set of built-in rules before it runs:
 
 | Level | Badge | Examples |
 |---|---|---|
@@ -260,6 +392,8 @@ wtflag checks the full raw command string (including pipe chains) against a set 
 │   -f            ignore nonexistent files and arguments, never prompt
 └───────────────────────────────────────────────────────────────────────┘
 ```
+
+Danger detection is informational — it shows a badge but does not block execution. To actually prevent a dangerous command from running, add it to the block list.
 
 ---
 
@@ -286,16 +420,23 @@ For commands not in the list, wtflag falls back to the tldr-pages description an
 
 ## Configuration
 
-wtflag stores its mute and block lists in `~/.config/wtflag/config.json`:
+### `~/.config/wtflag/config.json`
+
+Stores mute list, command block list, and block patterns:
 
 ```json
 {
   "mutelist": ["grep", "find"],
-  "blocked": ["rm", "curl"]
+  "blocked": ["rm", "curl"],
+  "blockPatterns": ["git push --force", "curl * | bash"]
 }
 ```
 
-Auto-accept entries are written directly to `~/.claude/settings.json` under `allowedTools`, which is the native Claude Code mechanism:
+Edit this file directly when managing the block list while a pattern is active (see warning in [Pattern blocking](#pattern-blocking)).
+
+### `~/.claude/settings.json`
+
+Auto-accept entries are written here under `allowedTools`:
 
 ```json
 {
@@ -305,6 +446,22 @@ Auto-accept entries are written directly to `~/.claude/settings.json` under `all
   ]
 }
 ```
+
+### `~/.local/share/wtflag/log.jsonl`
+
+Append-only audit log. Each line is a JSON object:
+
+```json
+{"ts":"2026-04-29T14:23:01.123Z","command":"rm -rf /var/www","cwd":"/home/user/myproject","blocked":true,"blockedBy":"rm","blockedType":"command","danger":[]}
+```
+
+### `~/.config/wtflag/profiles/`
+
+User-saved profiles, one JSON file per profile.
+
+### `.wtflag.json` (project root)
+
+Per-project overrides. Merged additively on top of global config at hook runtime.
 
 ---
 
@@ -326,15 +483,18 @@ The database is not checked into the repo. It is built automatically on `npm ins
 ```
 bin/wtflag.js          CLI entry point (commander)
 src/
-  hook.js              PreToolUse hook handler — block check, explain, pass-through
+  hook.js              PreToolUse hook — block check, explain, audit log, pass-through
   explain.js           Formats explanation and BLOCKED boxes (chalk)
   tokenizer.js         Shell string splitter — handles quotes, pipes, &&, ||
   tldr.js              SQLite wrapper for db/tldr.db
   flags.js             Runs `command --help` and matches flag descriptions
   danger.js            Detects destructive commands, renders DANGER/WARNING badges
   context.js           Maps (command, subcommand, args, flags) → human-readable context
-  config.js            Reads/writes ~/.config/wtflag/config.json (mute and block lists)
+  config.js            Reads/writes ~/.config/wtflag/config.json (mute, block, patterns)
   allow.js             Reads/writes allowedTools in ~/.claude/settings.json
+  log.js               Appends to and queries ~/.local/share/wtflag/log.jsonl
+  profiles.js          Built-in and user profile management
+  project-config.js    Finds .wtflag.json, merges with global config at runtime
   installer.js         Adds/removes the PreToolUse hook in ~/.claude/settings.json
   ipc.js               Unix socket path + helpers for watcher IPC
   watcher.js           Long-running socket server — receives and displays explanations
@@ -361,7 +521,7 @@ db/
 wtflag uninstall
 ```
 
-This removes the hook entry from `~/.claude/settings.json`. Claude Code will no longer call wtflag. Your mute and block lists remain in `~/.config/wtflag/config.json` and any `allowedTools` entries added via `wtflag allow` remain in `~/.claude/settings.json` — remove them manually if needed.
+This removes the hook entry from `~/.claude/settings.json`. Claude Code will no longer call wtflag. Your config and log remain at `~/.config/wtflag/` and `~/.local/share/wtflag/` — remove them manually if needed. Any `allowedTools` entries added via `wtflag allow` also remain in `~/.claude/settings.json` and should be removed manually.
 
 ---
 
