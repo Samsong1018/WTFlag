@@ -1,19 +1,32 @@
 import { DatabaseSync } from 'node:sqlite';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdirSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { DATA_DIR } from '../src/platform.js';
 
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_DIR = join(__dirname, '..', 'db');
-const DB_PATH = join(DB_DIR, 'tldr.db');
+const PACKAGE_DB_DIR = join(__dirname, '..', 'db');
 const ZIP_URL = 'https://github.com/tldr-pages/tldr/releases/latest/download/tldr.zip';
+
+// Prefer the package-local db/ dir (local installs).
+// Fall back to DATA_DIR if package dir is not writable (global installs).
+function resolveDbDir() {
+  try {
+    if (!existsSync(PACKAGE_DB_DIR)) mkdirSync(PACKAGE_DB_DIR, { recursive: true });
+    const probe = join(PACKAGE_DB_DIR, '.write-check');
+    writeFileSync(probe, '');
+    unlinkSync(probe);
+    return PACKAGE_DB_DIR;
+  } catch {
+    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+    return DATA_DIR;
+  }
+}
 
 export async function buildDb() {
   console.log('Downloading tldr-pages...');
-
-  if (!existsSync(DB_DIR)) mkdirSync(DB_DIR, { recursive: true });
 
   const res = await fetch(ZIP_URL);
   if (!res.ok) throw new Error(`Failed to download tldr-pages: ${res.status}`);
@@ -21,12 +34,15 @@ export async function buildDb() {
 
   console.log('Extracting and building database...');
 
+  const dbDir = resolveDbDir();
+  const dbPath = join(dbDir, 'tldr.db');
+
   const AdmZip = require('adm-zip');
   const zip = new AdmZip(buffer);
   const entries = zip.getEntries();
 
-  if (existsSync(DB_PATH)) unlinkSync(DB_PATH);
-  const db = new DatabaseSync(DB_PATH);
+  if (existsSync(dbPath)) unlinkSync(dbPath);
+  const db = new DatabaseSync(dbPath);
 
   db.exec(`
     CREATE TABLE commands (
@@ -57,7 +73,7 @@ export async function buildDb() {
   }
 
   db.close();
-  console.log(`✓ Database built with ${count} commands → ${DB_PATH}`);
+  console.log(`✓ Database built with ${count} commands → ${dbPath}`);
 }
 
 function extractDescription(markdown) {

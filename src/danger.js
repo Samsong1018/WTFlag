@@ -172,7 +172,7 @@ export function checkDanger(commandString) {
     }
   }
   // Dangers before warnings
-  return results.sort((a, b) => (a.level === 'danger' ? -1 : 1));
+  return results.sort((a, b) => (a.level === b.level ? 0 : a.level === 'danger' ? -1 : 1));
 }
 
 export function renderDangerLines(dangers, dim) {

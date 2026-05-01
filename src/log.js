@@ -20,7 +20,8 @@ export function readLog() {
     return readFileSync(LOG_PATH, 'utf8')
       .split('\n')
       .filter(Boolean)
-      .map(line => JSON.parse(line));
+      .map(line => { try { return JSON.parse(line); } catch { return null; } })
+      .filter(Boolean);
   } catch {
     return [];
   }

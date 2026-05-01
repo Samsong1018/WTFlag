@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { program } from 'commander';
 import { homedir } from 'node:os';
+import { createRequire } from 'node:module';
+const { version } = createRequire(import.meta.url)('../package.json');
 import { install, uninstall } from '../src/installer.js';
 import { explain } from '../src/explain.js';
 import { runHook } from '../src/hook.js';
@@ -16,11 +18,19 @@ import { allowCommand, disallowCommand, allowAll, disallowAll, listAllowed } fro
 import { readLog, clearLog, LOG_PATH } from '../src/log.js';
 import { getProfile, saveProfile, deleteProfile, listProfiles, BUILTIN } from '../src/profiles.js';
 import { findProjectConfig } from '../src/project-config.js';
+import { showStatus } from '../src/status.js';
 
 program
   .name('wtflag')
   .description('Explains shell commands run by Claude Code')
-  .version('0.1.0');
+  .version(version);
+
+// --- Status ---
+
+program
+  .command('status')
+  .description('Show hook state, watcher, config summary, and log stats')
+  .action(showStatus);
 
 // --- Setup ---
 
