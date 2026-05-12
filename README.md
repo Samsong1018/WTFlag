@@ -1,31 +1,67 @@
-# wtflag
+<p align="center">
+  <img src="assets/logo.svg" alt="wtflag" width="480"/>
+</p>
 
-**wtflag** hooks into [Claude Code](https://claude.ai/code) and explains every shell command before it runs — inline in your terminal, with no AI involved.
+<p align="center"><strong>Know what Claude is doing in your terminal — before it does it.</strong></p>
+
+wtflag hooks into [Claude Code](https://claude.ai/code) and explains every shell command it runs, inline, with no AI involved. Instant context, danger warnings, and full control over what Claude is allowed to execute.
 
 ```
 ┌ wtflag ──────────────────────────────────────────────────────────────┐
-│ git rebase -i HEAD~3
-│
-│ git rebase — Reapply commits on top of another branch
-│   → opens editor to squash, rename, reorder, or drop commits — replays them onto 'HEAD~3', rewrites history
-│
-│   -i            Make a list of commits to rebase. Let the user edit that list
+│ git rebase -i HEAD~3                                                  │
+│                                                                       │
+│ git rebase — Reapply commits on top of another branch                │
+│   → opens editor to squash, rename, reorder, or drop commits         │
+│     replays them onto 'HEAD~3', rewrites history                     │
+│                                                                       │
+│   -i    Make a list of commits to rebase. Let the user edit that list│
 └───────────────────────────────────────────────────────────────────────┘
 ```
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node.js ≥ 22](https://img.shields.io/badge/Node.js-%E2%89%A522-brightgreen)](https://nodejs.org)
+[![No AI at runtime](https://img.shields.io/badge/AI-none%20at%20runtime-lightgrey)](#how-it-works)
+
+---
+
+## Table of Contents
+
+- [What it does](#what-it-does)
+- [Install](#install)
+- [Usage](#usage)
+- [Commands](#commands)
+- [Muting commands](#muting-commands)
+- [Blocking commands](#blocking-commands)
+- [Auto-accepting commands](#auto-accepting-commands)
+- [Audit log](#audit-log)
+- [Profiles](#profiles)
+- [Per-project config](#per-project-config)
+- [Sound notifications](#sound-notifications)
+- [Danger detection](#danger-detection)
+- [Command coverage](#command-coverage)
+- [Configuration files](#configuration-files)
+- [How it works](#how-it-works)
+- [Project layout](#project-layout)
+- [Tech stack](#tech-stack)
+- [Uninstalling](#uninstalling)
 
 ---
 
 ## What it does
 
-Claude Code runs shell commands. wtflag intercepts each one via a `PreToolUse` hook and prints a formatted explanation to your terminal before the command executes. You always see:
+Claude Code runs shell commands. wtflag intercepts each one via a `PreToolUse` hook and prints a formatted explanation to your terminal before the command executes.
 
-- **What the command is** — color-highlighted syntax in the header
-- **What it does** — a description from the [tldr-pages](https://github.com/tldr-pages/tldr) database
-- **What it means here** — a plain-English summary of the specific arguments and their effect
-- **Flag descriptions** — each flag's meaning pulled live from `--help` output
-- **Danger warnings** — `DANGER` / `WARNING` badges for destructive commands before they run
+Every explanation shows you:
 
-Beyond explaining commands, wtflag also lets you control what Claude is allowed to run:
+| | |
+|---|---|
+| **What the command is** | Color-highlighted syntax in the header |
+| **What it does** | A description from the [tldr-pages](https://github.com/tldr-pages/tldr) database |
+| **What it means here** | Plain-English summary of the specific arguments and their effect |
+| **Flag descriptions** | Each flag's meaning, pulled live from `--help` output |
+| **Danger warnings** | `DANGER` / `WARNING` badges for destructive commands before they run |
+
+Beyond explaining commands, wtflag also gives you control over what Claude is allowed to run:
 
 - **Mute** commands whose explanations you don't need
 - **Block** commands you never want Claude to run — by name or by pattern
@@ -34,13 +70,13 @@ Beyond explaining commands, wtflag also lets you control what Claude is allowed 
 - **Per-project config** to set different rules per repository
 - **Audit log** to keep a permanent record of everything Claude ran
 
-It works entirely offline after setup — no network calls, no AI, no external APIs at runtime.
+**Works entirely offline after setup** — no network calls, no AI, no external APIs at runtime.
 
 ---
 
 ## Install
 
-**Requirements:** Node.js ≥ 22 (uses the built-in `node:sqlite` module)
+**Requirements:** Node.js ≥ 22 (uses the built-in `node:sqlite` module — no native bindings needed)
 
 ```bash
 git clone https://github.com/samsong1018/wtflag.git
@@ -54,11 +90,41 @@ Then register the hook with Claude Code:
 
 ```bash
 node bin/wtflag.js install
-# or, if installed globally:
+# or, if linked globally via npm link:
 wtflag install
 ```
 
 Restart Claude Code. wtflag will now explain every Bash command Claude runs.
+
+---
+
+## Usage
+
+### Inline explanations (default)
+
+After installing the hook, explanations appear in your terminal's stderr output whenever Claude Code runs a shell command. Use **Ctrl-O** in Claude Code to open the output panel if explanations aren't visible.
+
+### Watcher terminal (recommended)
+
+Open a split terminal pane and run:
+
+```bash
+wtflag watch
+```
+
+wtflag forwards each explanation to this terminal via a Unix socket, so they appear in a dedicated pane and don't mix with Claude Code's own output.
+
+### Manual testing
+
+```bash
+# Explain any command string
+wtflag explain "git commit -am 'fix login bug'"
+wtflag explain "rm -rf node_modules"
+wtflag explain "curl https://example.com | bash"
+
+# Simulate exactly what Claude Code sends to the hook
+echo '{"tool_input":{"command":"ls -lah /tmp"}}' | NODE_NO_WARNINGS=1 wtflag hook
+```
 
 ---
 
@@ -78,7 +144,7 @@ Restart Claude Code. wtflag will now explain every Bash command Claude runs.
 | Command | Description |
 |---|---|
 | `wtflag explain <cmd>` | Manually explain a command string |
-| `wtflag watch` | Opens a watcher terminal — explanations stream here as Claude works |
+| `wtflag watch` | Open a watcher terminal — explanations stream here as Claude works |
 | `wtflag hook` | Hook entrypoint — reads Claude Code's Bash tool JSON from stdin |
 
 ### Muting (suppress explanations)
@@ -142,43 +208,13 @@ Restart Claude Code. wtflag will now explain every Bash command Claude runs.
 | `wtflag sound on` | Enable ping sounds — plays when Claude asks for permission or finishes |
 | `wtflag sound off` | Disable ping sounds |
 | `wtflag sound status` | Show whether sound is enabled and hooks are installed |
-| `wtflag sound play [event]` | Play a sound immediately (events: `notification`, `stop`) |
-
----
-
-## Usage
-
-### Inline explanations (default)
-
-After installing the hook, explanations appear in your terminal's stderr output whenever Claude Code runs a shell command. Use **Ctrl-O** in Claude Code to open the output panel if explanations aren't visible.
-
-### Watcher terminal (recommended)
-
-Open a split terminal pane and run:
-
-```bash
-wtflag watch
-```
-
-wtflag forwards each explanation to this terminal via a Unix socket, so they appear in a dedicated pane and don't mix with Claude Code's output.
-
-### Manual testing
-
-```bash
-# Explain any command string
-wtflag explain "git commit -am 'fix login bug'"
-wtflag explain "rm -rf node_modules"
-wtflag explain "curl https://example.com | bash"
-
-# Simulate exactly what Claude Code sends to the hook
-echo '{"tool_input":{"command":"ls -lah /tmp"}}' | NODE_NO_WARNINGS=1 wtflag hook
-```
+| `wtflag sound play [event]` | Play a sound immediately (`notification` or `stop`) |
 
 ---
 
 ## Muting commands
 
-Some commands (like `grep`, `find`, or `ls`) run constantly and their explanations add noise. Muting suppresses the explanation box for those commands while letting them run normally.
+Some commands like `grep`, `find`, or `ls` run constantly and their explanations add noise. Muting suppresses the explanation box for those commands while letting them run normally.
 
 ```bash
 wtflag mute grep
@@ -206,10 +242,10 @@ When a blocked command is attempted, you'll see:
 
 ```
 ┌ BLOCKED ─────────────────────────────────────────────────────────────┐
-│ rm -rf /var/www
-│
-│ 'rm' is on your block list — Claude cannot run this command.
-│ Run `wtflag unblock rm` to allow it.
+│ rm -rf /var/www                                                       │
+│                                                                       │
+│ 'rm' is on your block list — Claude cannot run this command.         │
+│ Run `wtflag unblock rm` to allow it.                                 │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -227,19 +263,19 @@ wtflag block "curl * | bash"       # blocks curl-pipe-to-shell
 wtflag block "DROP TABLE *"        # blocks SQL drops
 ```
 
-Patterns use glob-style `*` (matches anything) and are tested case-insensitively against the full raw command string. `wtflag blocked` shows both command names and patterns as separate lists.
+Patterns use glob-style `*` (matches anything) and are tested case-insensitively against the full raw command string. `wtflag blocked` shows command names and patterns as separate lists.
 
-> **Warning: patterns match the full raw command string.**
+> **Warning:** Patterns match the full raw command string, including inside quoted arguments.
 >
-> This means a pattern fires if the text appears _anywhere_ in the command — including inside quoted string arguments. For example, with `rm -rf` in the block list, the command `echo "don't run rm -rf /"` would also be blocked because the literal string `rm -rf` appears inside the quoted argument.
+> For example, with `rm -rf` in the block list, the command `echo "don't run rm -rf /"` would also be blocked because the literal string appears inside the quoted argument. This is intentional — it's how wtflag catches dangerous patterns in pipe chains like `curl url | bash` — but it means short or common patterns can produce unexpected matches.
 >
-> This is intentional — it's how wtflag catches dangerous patterns in pipe chains like `curl url | bash` — but it means short or common patterns can produce unexpected matches. If you need to manage the block list while a broad pattern is active, edit `~/.config/wtflag/config.json` directly rather than running `wtflag unblock "..."` through Claude Code.
+> If you need to manage the block list while a broad pattern is active, edit `~/.config/wtflag/config.json` directly.
 
 ---
 
 ## Auto-accepting commands
 
-By default Claude Code prompts for permission before running Bash commands. Auto-accepting adds a command to the `allowedTools` list in `~/.claude/settings.json`, which tells Claude Code to skip the prompt for that command.
+By default, Claude Code prompts for permission before running Bash commands. Auto-accepting adds a command to the `allowedTools` list in `~/.claude/settings.json`, which tells Claude Code to skip the prompt for that command.
 
 ```bash
 # Auto-accept specific commands
@@ -260,7 +296,7 @@ wtflag disallow-all
 
 `wtflag allow git` adds `"Bash(command:git*)"` to `allowedTools`, which matches `git`, `git commit`, `git push --force`, and any other `git` invocation. `wtflag allow-all` adds `"Bash"`, which matches everything.
 
-**Note:** Blocked commands still take precedence. If `rm` is on the block list, it will be cancelled even if `allow-all` is enabled, because the hook runs before the permission check.
+> **Note:** Blocked commands always take precedence. If `rm` is on the block list, it will be cancelled even when `allow-all` is enabled, because the hook runs before the permission check.
 
 ---
 
@@ -275,7 +311,7 @@ wtflag log --danger     # only commands that triggered DANGER or WARNING
 wtflag log --all        # full history
 ```
 
-Output format:
+Output:
 
 ```
 04/29 14:23:01  [BLOCKED]   rm -rf /var/www                  (~/myproject)
@@ -339,7 +375,7 @@ wtflag project-config    # show which .wtflag.json is active and its contents
 
 ## Sound notifications
 
-wtflag can play a ping sound when Claude asks for your permission (a `Notification` event) or finishes its task (a `Stop` event). This is useful when Claude is working in the background and you want to know when it needs input or is done.
+wtflag can play a ping sound when Claude asks for your permission or finishes its task. This is useful when Claude is working in the background and you want to know when it needs input or is done.
 
 ```bash
 wtflag sound on     # enable — installs Stop and Notification hooks
@@ -349,56 +385,13 @@ wtflag sound status # check whether sound is on and hooks are wired up
 
 Sound hooks are written into `~/.claude/settings.json`. Restart Claude Code after running `wtflag sound on` to activate them.
 
-`wtflag sound on` uses `paplay` (Linux/PulseAudio), `ffplay` (Linux fallback), `afplay` (macOS), or a PowerShell beep (Windows) — whichever is available. If none are found, the command silently no-ops.
-
----
-
-## How it works
-
-```
-Claude Code
-    │  (about to run a Bash tool)
-    ▼
-PreToolUse hook → wtflag hook
-    │
-    ├─ Load config   global config + project .wtflag.json merged
-    │
-    ├─ Block check (command names)
-    │     if any segment's effective command is in the block list:
-    │       → BLOCKED box to stderr
-    │       → logged to audit log
-    │       → exit(2) — Claude Code cancels the tool call
-    │
-    ├─ Block check (patterns)
-    │     if the raw command string matches any block pattern:
-    │       → BLOCKED box to stderr
-    │       → logged to audit log
-    │       → exit(2) — Claude Code cancels the tool call
-    │
-    ├─ tokenizer.js     splits shell string into segments, handles pipes/&&/||
-    ├─ mute filter      skips explanation for muted command segments
-    ├─ danger.js        checks for destructive patterns → DANGER/WARNING badges
-    ├─ tldr.js          looks up command description in SQLite
-    ├─ context.js       maps (command, args, flags) → plain-English explanation
-    ├─ flags.js         runs `command --help` and matches each flag
-    └─ explain.js       renders everything into a chalk-bordered box → stderr
-         │
-         └─ ipc.js      also forwards to watcher.js via Unix socket (if running)
-    │
-    ├─ Audit log        command, cwd, blocked status, danger level → log.jsonl
-    │
-    ▼
-Original JSON passed through to stdout
-(Claude Code proceeds normally)
-```
-
-The hook passes the original JSON through to stdout on success. On a block, it exits with code `2` and writes nothing to stdout — Claude Code treats this as a cancelled tool call and Claude receives the BLOCKED message as context.
+Uses `paplay` (Linux/PulseAudio), `ffplay` (Linux fallback), `afplay` (macOS), or a PowerShell beep (Windows) — whichever is available.
 
 ---
 
 ## Danger detection
 
-wtflag checks the full raw command string (including pipe chains) against a set of built-in rules before it runs:
+wtflag checks the full raw command string (including pipe chains) against a set of built-in rules before execution:
 
 | Level | Badge | Examples |
 |---|---|---|
@@ -407,19 +400,19 @@ wtflag checks the full raw command string (including pipe chains) against a set 
 
 ```
 ┌ wtflag ──────────────────────────────────────────────────────────────┐
-│ rm -rf /tmp/build
-│
-│ DANGER  Recursive deletion — files cannot be recovered
-│
-│ rm — Remove files or directories
-│   → permanently deletes '/tmp/build' — no trash, cannot be undone
-│
-│   -r            remove directories and their contents recursively
-│   -f            ignore nonexistent files and arguments, never prompt
+│ rm -rf /tmp/build                                                     │
+│                                                                       │
+│ DANGER  Recursive deletion — files cannot be recovered               │
+│                                                                       │
+│ rm — Remove files or directories                                      │
+│   → permanently deletes '/tmp/build' — no trash, cannot be undone   │
+│                                                                       │
+│   -r    remove directories and their contents recursively            │
+│   -f    ignore nonexistent files and arguments, never prompt         │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-Danger detection is informational — it shows a badge but does not block execution. To actually prevent a dangerous command from running, add it to the block list.
+Danger detection is informational — it shows a badge but does not block execution. To prevent a dangerous command from running, add it to the block list.
 
 ---
 
@@ -444,7 +437,7 @@ For commands not in the list, wtflag falls back to the tldr-pages description an
 
 ---
 
-## Configuration
+## Configuration files
 
 ### `~/.config/wtflag/config.json`
 
@@ -458,7 +451,7 @@ Stores mute list, command block list, and block patterns:
 }
 ```
 
-Edit this file directly when managing the block list while a pattern is active (see warning in [Pattern blocking](#pattern-blocking)).
+Edit this file directly when managing the block list while a broad pattern is active.
 
 ### `~/.claude/settings.json`
 
@@ -478,16 +471,93 @@ Auto-accept entries are written here under `allowedTools`:
 Append-only audit log. Each line is a JSON object:
 
 ```json
-{"ts":"2026-04-29T14:23:01.123Z","command":"rm -rf /var/www","cwd":"/home/user/myproject","blocked":true,"blockedBy":"rm","blockedType":"command","danger":[]}
+{
+  "ts": "2026-04-29T14:23:01.123Z",
+  "command": "rm -rf /var/www",
+  "cwd": "/home/user/myproject",
+  "blocked": true,
+  "blockedBy": "rm",
+  "blockedType": "command",
+  "danger": []
+}
 ```
 
 ### `~/.config/wtflag/profiles/`
 
-User-saved profiles, one JSON file per profile.
+User-saved profiles — one JSON file per profile.
 
 ### `.wtflag.json` (project root)
 
 Per-project overrides. Merged additively on top of global config at hook runtime.
+
+---
+
+## How it works
+
+```
+Claude Code
+    │  (about to run a Bash tool)
+    ▼
+PreToolUse hook → wtflag hook
+    │
+    ├─ Load config       global config + project .wtflag.json merged
+    │
+    ├─ Block check       if any segment's effective command is in the block list:
+    │   (names)            → BLOCKED box to stderr
+    │                      → logged to audit log
+    │                      → exit(2) — Claude Code cancels the tool call
+    │
+    ├─ Block check       if the raw command string matches any block pattern:
+    │   (patterns)         → BLOCKED box to stderr
+    │                      → logged to audit log
+    │                      → exit(2) — Claude Code cancels the tool call
+    │
+    ├─ tokenizer.js      splits shell string into segments (pipes, &&, ||, quotes)
+    ├─ mute filter       skips explanation for muted command segments
+    ├─ danger.js         checks for destructive patterns → DANGER/WARNING badges
+    ├─ tldr.js           looks up command description in SQLite
+    ├─ context.js        maps (command, args, flags) → plain-English explanation
+    ├─ flags.js          runs `command --help` and matches each flag
+    └─ explain.js        renders everything into a chalk box → stderr
+         │
+         └─ ipc.js       forwards to watcher terminal via Unix socket (if running)
+    │
+    ├─ Audit log         command, cwd, blocked status, danger level → log.jsonl
+    │
+    ▼
+Original JSON passed through to stdout
+(Claude Code proceeds normally)
+```
+
+On a block, the hook exits with code `2` and writes nothing to stdout — Claude Code treats this as a cancelled tool call and Claude receives the BLOCKED message as context.
+
+---
+
+## Project layout
+
+```
+bin/wtflag.js            CLI entry point (commander)
+src/
+  hook.js                PreToolUse hook — block check, explain, audit log, pass-through
+  explain.js             Formats explanation and BLOCKED boxes (chalk)
+  tokenizer.js           Shell string splitter — handles quotes, pipes, &&, ||
+  tldr.js                SQLite wrapper for db/tldr.db
+  flags.js               Runs `command --help` and matches flag descriptions
+  danger.js              Detects destructive commands, renders DANGER/WARNING badges
+  context.js             Maps (command, subcommand, args, flags) → human-readable context
+  config.js              Reads/writes ~/.config/wtflag/config.json
+  allow.js               Reads/writes allowedTools in ~/.claude/settings.json
+  log.js                 Appends to and queries ~/.local/share/wtflag/log.jsonl
+  profiles.js            Built-in and user profile management
+  project-config.js      Finds .wtflag.json, merges with global config at runtime
+  installer.js           Adds/removes the PreToolUse hook in ~/.claude/settings.json
+  ipc.js                 Unix socket path + helpers for watcher IPC
+  watcher.js             Long-running socket server — receives and displays explanations
+scripts/
+  build-db.js            Downloads tldr.zip, parses .md files, writes db/tldr.db
+db/
+  tldr.db                SQLite database (gitignored, built by postinstall)
+```
 
 ---
 
@@ -504,40 +574,14 @@ The database is not checked into the repo. It is built automatically on `npm ins
 
 ---
 
-## Project layout
-
-```
-bin/wtflag.js          CLI entry point (commander)
-src/
-  hook.js              PreToolUse hook — block check, explain, audit log, pass-through
-  explain.js           Formats explanation and BLOCKED boxes (chalk)
-  tokenizer.js         Shell string splitter — handles quotes, pipes, &&, ||
-  tldr.js              SQLite wrapper for db/tldr.db
-  flags.js             Runs `command --help` and matches flag descriptions
-  danger.js            Detects destructive commands, renders DANGER/WARNING badges
-  context.js           Maps (command, subcommand, args, flags) → human-readable context
-  config.js            Reads/writes ~/.config/wtflag/config.json (mute, block, patterns)
-  allow.js             Reads/writes allowedTools in ~/.claude/settings.json
-  log.js               Appends to and queries ~/.local/share/wtflag/log.jsonl
-  profiles.js          Built-in and user profile management
-  project-config.js    Finds .wtflag.json, merges with global config at runtime
-  installer.js         Adds/removes the PreToolUse hook in ~/.claude/settings.json
-  ipc.js               Unix socket path + helpers for watcher IPC
-  watcher.js           Long-running socket server — receives and displays explanations
-scripts/
-  build-db.js          Downloads tldr.zip, parses .md files, writes db/tldr.db
-db/
-  tldr.db              SQLite database (gitignored, built by postinstall)
-```
-
----
-
 ## Tech stack
 
-- **Runtime**: Node.js ≥ 22 — uses the built-in `node:sqlite` module (no native bindings needed)
-- **Module format**: ES Modules (`"type": "module"`)
-- **Dependencies**: [`commander`](https://www.npmjs.com/package/commander), [`chalk`](https://www.npmjs.com/package/chalk), [`adm-zip`](https://www.npmjs.com/package/adm-zip)
-- **No AI at runtime** — all lookups are static (SQLite + `--help` parsing + pattern matching)
+| | |
+|---|---|
+| **Runtime** | Node.js ≥ 22 — uses the built-in `node:sqlite` module (no native bindings) |
+| **Module format** | ES Modules (`"type": "module"`) |
+| **Dependencies** | [`commander`](https://www.npmjs.com/package/commander), [`chalk`](https://www.npmjs.com/package/chalk), [`adm-zip`](https://www.npmjs.com/package/adm-zip) |
+| **AI at runtime** | None — all lookups are static (SQLite + `--help` parsing + pattern matching) |
 
 ---
 
@@ -547,10 +591,10 @@ db/
 wtflag uninstall
 ```
 
-This removes the hook entry from `~/.claude/settings.json`. Claude Code will no longer call wtflag. Your config and log remain at `~/.config/wtflag/` and `~/.local/share/wtflag/` — remove them manually if needed. Any `allowedTools` entries added via `wtflag allow` also remain in `~/.claude/settings.json` and should be removed manually.
+This removes the hook entry from `~/.claude/settings.json`. Claude Code will no longer call wtflag. Your config and log remain at `~/.config/wtflag/` and `~/.local/share/wtflag/` — remove them manually if needed. Any `allowedTools` entries added via `wtflag allow` also remain in `~/.claude/settings.json` and should be cleaned up manually.
 
 ---
 
 ## License
 
-MIT
+[MIT](LICENSE)
