@@ -8,6 +8,7 @@ import { getEffectiveConfig } from './project-config.js';
 import { tokenize } from './tokenizer.js';
 import { checkDanger } from './danger.js';
 import { appendLog } from './log.js';
+import { scanForSecrets, isGitCommit, isGitPush, renderSecretsBlocked, renderSecretsWarning } from './secrets.js';
 
 export async function runHook({ dryRun = false } = {}) {
   const isDryRun = dryRun || process.env.WTFLAG_DRY_RUN === '1';
@@ -63,7 +64,24 @@ export async function runHook({ dryRun = false } = {}) {
       // Never block Claude Code due to wtflag errors
     }
 
-    // 3. Explain (skips muted segments)
+    // 3. Secret scan — block git push if secrets found, warn on git commit
+    let secretFindings = [];
+    try {
+      if (isGitCommit(command) || isGitPush(command)) {
+        secretFindings = scanForSecrets(command, process.cwd());
+        if (secretFindings.length > 0 && isGitPush(command)) {
+          const box = renderSecretsBlocked(secretFindings);
+          process.stderr.write('\n' + box + '\n\n');
+          sendToWatcher(box);
+          appendLog({ command, cwd: process.cwd(), blocked: true, blockedBy: 'secrets', blockedType: 'secrets', secretsFound: secretFindings.map(({ file, line, type }) => ({ file, line, type })), danger: [] });
+          process.exit(2);
+        }
+      }
+    } catch {
+      // Never block Claude Code due to secret scan errors
+    }
+
+    // 4. Explain (skips muted segments)
     try {
       const output = explain(command, { mutelist: config.mutelist });
       if (output) {
@@ -74,7 +92,16 @@ export async function runHook({ dryRun = false } = {}) {
       // Never block Claude Code due to explainer errors
     }
 
-    // 4. Dry-run — show explanation then block execution
+    // 5. Secrets warning for git commit (shown after explain so it's prominent at the bottom)
+    if (secretFindings.length > 0) {
+      try {
+        const box = renderSecretsWarning(secretFindings);
+        process.stderr.write('\n' + box + '\n\n');
+        sendToWatcher(box);
+      } catch {}
+    }
+
+    // 6. Dry-run — show explanation then block execution
     if (isDryRun) {
       const msg = '[wtflag] Dry-run mode is active — command blocked. Unset WTFLAG_DRY_RUN to allow.\n';
       process.stderr.write(msg);
@@ -84,7 +111,7 @@ export async function runHook({ dryRun = false } = {}) {
       process.exit(2);
     }
 
-    // 5. Audit log
+    // 7. Audit log
     try {
       const dangers = checkDanger(command);
       appendLog({
@@ -93,6 +120,7 @@ export async function runHook({ dryRun = false } = {}) {
         blocked: false,
         danger: dangers.map(d => d.message),
         dangerLevel: dangers[0]?.level ?? null,
+        ...(secretFindings.length > 0 && { secretsFound: secretFindings.map(({ file, line, type }) => ({ file, line, type })) }),
       });
     } catch {}
   }
