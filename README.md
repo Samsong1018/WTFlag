@@ -78,23 +78,33 @@ Beyond explaining commands, wtflag also gives you control over what Claude is al
 
 **Requirements:** Node.js ≥ 22 (uses the built-in `node:sqlite` module — no native bindings needed)
 
+### Global install (recommended)
+
 ```bash
-git clone https://github.com/samsong1018/wtflag.git
-cd wtflag
-npm install
+npm install -g wtflag
 ```
 
-`npm install` automatically builds the tldr-pages SQLite database via the `postinstall` script.
+This puts the `wtflag` command on your PATH. The `postinstall` script builds the tldr-pages SQLite database automatically.
 
 Then register the hook with Claude Code:
 
 ```bash
-node bin/wtflag.js install
-# or, if linked globally via npm link:
 wtflag install
 ```
 
 Restart Claude Code. wtflag will now explain every Bash command Claude runs.
+
+### Install from source
+
+```bash
+git clone https://github.com/samsong1018/wtflag.git
+cd wtflag
+npm install       # also builds the tldr DB via postinstall
+npm link          # puts wtflag on your PATH from the local clone
+wtflag install
+```
+
+Use this path if you want to hack on wtflag itself — changes in `src/` take effect immediately without reinstalling.
 
 ---
 
