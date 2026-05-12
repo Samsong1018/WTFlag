@@ -1,5 +1,58 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { Chalk } from 'chalk';
 const chalk = new Chalk({ level: 3 });
+import { CONFIG_DIR } from './platform.js';
+
+const CUSTOM_RULES_PATH = join(CONFIG_DIR, 'danger-rules.json');
+
+function loadCustomRules() {
+  if (!existsSync(CUSTOM_RULES_PATH)) return [];
+  try {
+    const raw = JSON.parse(readFileSync(CUSTOM_RULES_PATH, 'utf8'));
+    if (!Array.isArray(raw)) return [];
+    return raw.flatMap(r => {
+      if (!r.pattern || !['danger', 'warning'].includes(r.level) || !r.message) return [];
+      try {
+        return [{ pattern: new RegExp(r.pattern), level: r.level, message: r.message }];
+      } catch {
+        return [];
+      }
+    });
+  } catch {
+    return [];
+  }
+}
+
+export function listCustomRules() {
+  if (!existsSync(CUSTOM_RULES_PATH)) return [];
+  try {
+    const raw = JSON.parse(readFileSync(CUSTOM_RULES_PATH, 'utf8'));
+    return Array.isArray(raw) ? raw : [];
+  } catch {
+    return [];
+  }
+}
+
+export function addCustomRule(pattern, level, message) {
+  new RegExp(pattern); // throws if the pattern is not a valid regex
+  const rules = listCustomRules();
+  rules.push({ pattern, level, message });
+  _writeCustomRules(rules);
+}
+
+export function removeCustomRule(index) {
+  const rules = listCustomRules();
+  if (index < 0 || index >= rules.length) return false;
+  rules.splice(index, 1);
+  _writeCustomRules(rules);
+  return true;
+}
+
+function _writeCustomRules(rules) {
+  mkdirSync(dirname(CUSTOM_RULES_PATH), { recursive: true });
+  writeFileSync(CUSTOM_RULES_PATH, JSON.stringify(rules, null, 2) + '\n');
+}
 
 const RULES = [
   // Recursive deletion
@@ -101,7 +154,7 @@ const RULES = [
     level: 'warning',
     message: 'iptables -F — flushes all firewall rules, exposing the system',
   },
-  // Fork bomb
+  // Fork bomb — \s* matches both spaced (: () { :|:& }; :) and compact (:(){ :|:& };:) forms
   {
     pattern: /:\s*\(\s*\)\s*\{.*:\s*\|.*:.*\}/,
     level: 'danger',
@@ -163,9 +216,10 @@ const RULES = [
 ];
 
 export function checkDanger(commandString) {
+  const allRules = [...RULES, ...loadCustomRules()];
   const seen = new Set();
   const results = [];
-  for (const { pattern, level, message } of RULES) {
+  for (const { pattern, level, message } of allRules) {
     if (pattern.test(commandString) && !seen.has(message)) {
       seen.add(message);
       results.push({ level, message });

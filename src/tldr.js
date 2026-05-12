@@ -16,7 +16,6 @@ function resolveDbPath() {
 
 let db = null;
 let stmtCompound = null;
-let stmtSingle = null;
 let stmtBase = null;
 
 function getDb() {
@@ -25,7 +24,6 @@ function getDb() {
   if (!existsSync(path)) return null;
   db = new DatabaseSync(path, { readOnly: true });
   stmtCompound = db.prepare('SELECT description, content FROM commands WHERE name = ? OR name = ? LIMIT 1');
-  stmtSingle   = db.prepare('SELECT description, content FROM commands WHERE name = ? OR name = ? LIMIT 1');
   stmtBase     = db.prepare('SELECT description, content FROM commands WHERE name = ? LIMIT 1');
   return db;
 }
@@ -40,7 +38,7 @@ export function lookupCommand(command, subcommand = null) {
   if (!getDb()) return null;
 
   if (subcommand) {
-    const compound = stmtSingle.get(`${command}-${subcommand}`, `${command} ${subcommand}`);
+    const compound = stmtCompound.get(`${command}-${subcommand}`, `${command} ${subcommand}`);
     if (compound) return compound;
   }
 

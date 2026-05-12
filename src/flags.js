@@ -39,6 +39,23 @@ function getHelpText(command, subcommand) {
     }
   }
 
+  // Man page fallback (Unix only) — useful for system commands with sparse --help output
+  if (!isWindows && !text.trim()) {
+    try {
+      const manArgs = subcommand ? [subcommand] : [command];
+      const result = spawnSync('man', manArgs, {
+        env: { ...process.env, PAGER: 'cat', MANWIDTH: '160', COLUMNS: '160' },
+        timeout: 5000,
+        encoding: 'utf8',
+      });
+      const raw = (result.stdout ?? '') + (result.stderr ?? '');
+      // Strip nroff overstrike bold/underline sequences (e.g. 'a\ba' → 'a')
+      text = raw.replace(/.\x08/g, '');
+    } catch {
+      text = '';
+    }
+  }
+
   helpCache.set(key, text);
   return text;
 }

@@ -10,7 +10,10 @@ export function findProjectConfig(startDir) {
     const candidate = join(dir, '.wtflag.json');
     if (existsSync(candidate)) {
       try { return { path: candidate, config: JSON.parse(readFileSync(candidate, 'utf8')) }; }
-      catch { return null; }
+      catch {
+        process.stderr.write(`wtflag: .wtflag.json is not valid JSON and will be ignored: ${candidate}\n`);
+        return null;
+      }
     }
     const parent = dirname(dir);
     if (parent === dir) return null;

@@ -6,10 +6,13 @@ const CONFIG_PATH = join(CONFIG_DIR, 'config.json');
 
 function readConfig() {
   if (!existsSync(CONFIG_PATH)) return { mutelist: [], blocked: [], blockPatterns: [] };
-  try {
-    return JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
-  } catch {
-    return { mutelist: [], blocked: [], blockPatterns: [] };
+  const raw = readFileSync(CONFIG_PATH, 'utf8');
+  try { return JSON.parse(raw); }
+  catch {
+    throw new Error(
+      `~/.config/wtflag/config.json is not valid JSON — please fix or delete it.\n` +
+      `  Path: ${CONFIG_PATH}`
+    );
   }
 }
 
@@ -131,4 +134,16 @@ export function setBlockPatterns(patterns) {
 export function matchesPattern(pattern, command) {
   const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
   return new RegExp(escaped, 'i').test(command);
+}
+
+// --- Sound ---
+
+export function isSoundEnabled() {
+  return readConfig().sound === true;
+}
+
+export function setSoundEnabled(enabled) {
+  const config = readConfig();
+  config.sound = enabled;
+  writeConfig(config);
 }

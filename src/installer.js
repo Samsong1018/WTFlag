@@ -1,9 +1,9 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-import { HOOK_COMMAND, HOOK_COMMAND_LEGACY } from './platform.js';
+import { HOOK_COMMAND, HOOK_COMMAND_LEGACY, isWindows } from './platform.js';
+import { readSettings, writeSettings } from './settings.js';
 
-const SETTINGS_PATH = join(homedir(), '.claude', 'settings.json');
+const PREFIX = isWindows ? '' : 'NODE_NO_WARNINGS=1 ';
+const SOUND_CMD_STOP = `${PREFIX}wtflag sound play stop`;
+const SOUND_CMD_NOTIF = `${PREFIX}wtflag sound play notification`;
 
 export function install() {
   const settings = readSettings();
@@ -66,14 +66,62 @@ export function uninstall() {
   console.log('✓ Hook removed.');
 }
 
-function readSettings() {
-  if (!existsSync(SETTINGS_PATH)) return {};
-  try { return JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')); }
-  catch { return {}; }
+const hasSoundHook = (hooks, cmd) =>
+  Array.isArray(hooks) && hooks.some(h => Array.isArray(h.hooks) && h.hooks.some(e => e.command === cmd));
+
+export function installSoundHooks() {
+  const settings = readSettings();
+  settings.hooks ??= {};
+
+  settings.hooks.Stop ??= [];
+  if (!hasSoundHook(settings.hooks.Stop, SOUND_CMD_STOP)) {
+    settings.hooks.Stop.push({ hooks: [{ type: 'command', command: SOUND_CMD_STOP }] });
+  }
+
+  settings.hooks.Notification ??= [];
+  if (!hasSoundHook(settings.hooks.Notification, SOUND_CMD_NOTIF)) {
+    settings.hooks.Notification.push({ hooks: [{ type: 'command', command: SOUND_CMD_NOTIF }] });
+  }
+
+  writeSettings(settings);
 }
 
-function writeSettings(settings) {
-  const dir = join(homedir(), '.claude');
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + '\n');
+export function uninstallSoundHooks() {
+  const settings = readSettings();
+  if (!settings.hooks) return;
+
+  const isSoundEntry = (h) =>
+    Array.isArray(h.hooks) && h.hooks.some(e =>
+      e.command === SOUND_CMD_STOP || e.command === SOUND_CMD_NOTIF
+    );
+
+  if (settings.hooks.Stop) {
+    settings.hooks.Stop = settings.hooks.Stop.filter(h => !isSoundEntry(h));
+  }
+  if (settings.hooks.Notification) {
+    settings.hooks.Notification = settings.hooks.Notification.filter(h => !isSoundEntry(h));
+  }
+
+  writeSettings(settings);
+}
+
+export function isSoundHookInstalled() {
+  const settings = readSettings();
+  return (
+    hasSoundHook(settings.hooks?.Stop, SOUND_CMD_STOP) &&
+    hasSoundHook(settings.hooks?.Notification, SOUND_CMD_NOTIF)
+  );
+}
+
+export function isHookInstalled() {
+  try {
+    const settings = readSettings();
+    return settings.hooks?.PreToolUse?.some(
+      h => Array.isArray(h.hooks) && h.hooks.some(
+        e => e.command === HOOK_COMMAND || e.command === HOOK_COMMAND_LEGACY
+      )
+    ) ?? false;
+  } catch {
+    return false;
+  }
 }

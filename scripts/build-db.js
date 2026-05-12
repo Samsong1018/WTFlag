@@ -1,10 +1,11 @@
 import { DatabaseSync } from 'node:sqlite';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, unlinkSync, writeFileSync, renameSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { DATA_DIR } from '../src/platform.js';
 
+// adm-zip has no named ESM exports, so require() is the only way to load it in an ES module
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DB_DIR = join(__dirname, '..', 'db');
@@ -36,13 +37,14 @@ export async function buildDb() {
 
   const dbDir = resolveDbDir();
   const dbPath = join(dbDir, 'tldr.db');
+  const tmpPath = dbPath + '.tmp';
 
   const AdmZip = require('adm-zip');
   const zip = new AdmZip(buffer);
   const entries = zip.getEntries();
 
-  if (existsSync(dbPath)) unlinkSync(dbPath);
-  const db = new DatabaseSync(dbPath);
+  if (existsSync(tmpPath)) unlinkSync(tmpPath);
+  const db = new DatabaseSync(tmpPath);
 
   db.exec(`
     CREATE TABLE commands (
@@ -73,6 +75,8 @@ export async function buildDb() {
   }
 
   db.close();
+  if (existsSync(dbPath)) unlinkSync(dbPath);
+  renameSync(tmpPath, dbPath);
   console.log(`✓ Database built with ${count} commands → ${dbPath}`);
 }
 

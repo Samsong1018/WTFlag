@@ -37,13 +37,21 @@ export const BUILTIN = {
 
 export function getProfile(name) {
   if (BUILTIN[name]) return BUILTIN[name];
+  try { validateProfileName(name); } catch { return null; }
   const path = join(PROFILES_DIR, `${name}.json`);
   if (!existsSync(path)) return null;
   try { return JSON.parse(readFileSync(path, 'utf8')); }
   catch { return null; }
 }
 
+function validateProfileName(name) {
+  if (!name || typeof name !== 'string') throw new Error('Profile name must be a non-empty string.');
+  if (/[/\\]/.test(name) || name.includes('..')) throw new Error(`Invalid profile name '${name}' — must not contain path separators or '..'.`);
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error(`Invalid profile name '${name}' — use only letters, numbers, hyphens, and underscores.`);
+}
+
 export function saveProfile(name, data) {
+  validateProfileName(name);
   if (BUILTIN[name]) throw new Error(`'${name}' is a built-in profile and cannot be overwritten.`);
   if (!existsSync(PROFILES_DIR)) mkdirSync(PROFILES_DIR, { recursive: true });
   writeFileSync(join(PROFILES_DIR, `${name}.json`), JSON.stringify(data, null, 2) + '\n');
@@ -51,6 +59,7 @@ export function saveProfile(name, data) {
 
 export function deleteProfile(name) {
   if (BUILTIN[name]) return false;
+  try { validateProfileName(name); } catch { return false; }
   const path = join(PROFILES_DIR, `${name}.json`);
   if (!existsSync(path)) return false;
   rmSync(path);

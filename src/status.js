@@ -1,27 +1,10 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { existsSync } from 'node:fs';
 import chalk from 'chalk';
-import { SOCKET_PATH, isWindows, HOOK_COMMAND, HOOK_COMMAND_LEGACY } from './platform.js';
-import { getMutelist, getBlocklist, getBlockPatterns } from './config.js';
+import { SOCKET_PATH, isWindows } from './platform.js';
+import { getMutelist, getBlocklist, getBlockPatterns, isSoundEnabled } from './config.js';
+import { isHookInstalled, isSoundHookInstalled } from './installer.js';
 import { readLog, LOG_PATH } from './log.js';
 import { dbExists } from './tldr.js';
-
-const SETTINGS_PATH = join(homedir(), '.claude', 'settings.json');
-
-function isHookInstalled() {
-  if (!existsSync(SETTINGS_PATH)) return false;
-  try {
-    const settings = JSON.parse(readFileSync(SETTINGS_PATH, 'utf8'));
-    return settings.hooks?.PreToolUse?.some(
-      h => Array.isArray(h.hooks) && h.hooks.some(
-        e => e.command === HOOK_COMMAND || e.command === HOOK_COMMAND_LEGACY
-      )
-    ) ?? false;
-  } catch {
-    return false;
-  }
-}
 
 export function showStatus() {
   const hookInstalled = isHookInstalled();
@@ -58,6 +41,12 @@ export function showStatus() {
       ? chalk.green('running')
       : chalk.dim('not running — `wtflag watch` in a split pane')}`);
   }
+
+  const soundOn = isSoundEnabled();
+  const soundHooked = soundOn && isSoundHookInstalled();
+  lines.push(`    ${soundOn ? (soundHooked ? ok : warn) : off}  Sound      ${soundOn
+    ? soundHooked ? chalk.green('on') : chalk.yellow('on') + chalk.dim(' (hooks missing — run `wtflag sound on`)')
+    : chalk.dim('off — `wtflag sound on` to enable')}`);
 
   lines.push(`    ${dbReady ? ok : warn}  tldr DB    ${dbReady
     ? chalk.green('ready')

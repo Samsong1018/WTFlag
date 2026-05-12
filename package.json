@@ -6,9 +6,16 @@
   "bin": {
     "wtflag": "./bin/wtflag.js"
   },
+  "files": [
+    "bin",
+    "src",
+    "scripts",
+    "README.md"
+  ],
   "scripts": {
     "build-db": "node --no-warnings scripts/build-db.js",
-    "postinstall": "node --no-warnings scripts/build-db.js"
+    "postinstall": "node --no-warnings scripts/build-db.js",
+    "test": "node --no-warnings --test test/**/*.test.js"
   },
   "dependencies": {
     "adm-zip": "^0.5.10",
@@ -18,5 +25,23 @@
   "engines": {
     "node": ">=22"
   },
+  "keywords": [
+    "claude-code",
+    "shell",
+    "explainer",
+    "cli",
+    "tldr",
+    "hook",
+    "security",
+    "developer-tools"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/samsong1018/wtflag.git"
+  },
+  "bugs": {
+    "url": "https://github.com/samsong1018/wtflag/issues"
+  },
+  "homepage": "https://github.com/samsong1018/wtflag#readme",
   "license": "MIT"
 }

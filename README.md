@@ -71,6 +71,7 @@ Restart Claude Code. wtflag will now explain every Bash command Claude runs.
 | `wtflag install` | Adds the `PreToolUse` hook to `~/.claude/settings.json` |
 | `wtflag uninstall` | Removes the hook |
 | `wtflag update-db` | Re-downloads and rebuilds the tldr-pages database |
+| `wtflag status` | Show hook state, watcher, config summary, and log stats |
 
 ### Explanations
 
@@ -115,7 +116,7 @@ Restart Claude Code. wtflag will now explain every Bash command Claude runs.
 | `wtflag log --blocked` | Show only blocked commands |
 | `wtflag log --danger` | Show only commands that triggered danger warnings |
 | `wtflag log -n <count>` | Show last N entries |
-| `wtflag log --clear` | Clear the log |
+| `wtflag log --clear --yes` | Clear the log (requires `--yes` to confirm) |
 | `wtflag log --path` | Print the log file path |
 
 ### Profiles
@@ -133,6 +134,15 @@ Restart Claude Code. wtflag will now explain every Bash command Claude runs.
 | Command | Description |
 |---|---|
 | `wtflag project-config` | Show the `.wtflag.json` active for the current directory |
+
+### Sound
+
+| Command | Description |
+|---|---|
+| `wtflag sound on` | Enable ping sounds — plays when Claude asks for permission or finishes |
+| `wtflag sound off` | Disable ping sounds |
+| `wtflag sound status` | Show whether sound is enabled and hooks are installed |
+| `wtflag sound play [event]` | Play a sound immediately (events: `notification`, `stop`) |
 
 ---
 
@@ -324,6 +334,22 @@ Project rules merge additively on top of your global config — they can only ad
 ```bash
 wtflag project-config    # show which .wtflag.json is active and its contents
 ```
+
+---
+
+## Sound notifications
+
+wtflag can play a ping sound when Claude asks for your permission (a `Notification` event) or finishes its task (a `Stop` event). This is useful when Claude is working in the background and you want to know when it needs input or is done.
+
+```bash
+wtflag sound on     # enable — installs Stop and Notification hooks
+wtflag sound off    # disable — removes the hooks
+wtflag sound status # check whether sound is on and hooks are wired up
+```
+
+Sound hooks are written into `~/.claude/settings.json`. Restart Claude Code after running `wtflag sound on` to activate them.
+
+`wtflag sound on` uses `paplay` (Linux/PulseAudio), `ffplay` (Linux fallback), `afplay` (macOS), or a PowerShell beep (Windows) — whichever is available. If none are found, the command silently no-ops.
 
 ---
 

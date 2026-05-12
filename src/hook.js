@@ -9,7 +9,8 @@ import { tokenize } from './tokenizer.js';
 import { checkDanger } from './danger.js';
 import { appendLog } from './log.js';
 
-export async function runHook() {
+export async function runHook({ dryRun = false } = {}) {
+  const isDryRun = dryRun || process.env.WTFLAG_DRY_RUN === '1';
   let raw = '';
   for await (const chunk of process.stdin) raw += chunk;
 
@@ -24,7 +25,13 @@ export async function runHook() {
   const command = data?.tool_input?.command;
 
   if (command) {
-    const config = getEffectiveConfig(process.cwd());
+    let config;
+    try {
+      config = getEffectiveConfig(process.cwd());
+    } catch (err) {
+      process.stderr.write(`wtflag: config error — ${err.message}\n`);
+      config = { mutelist: new Set(), blocklist: new Set(), blockPatterns: [] };
+    }
 
     // 1. Block by command name
     try {
@@ -67,7 +74,17 @@ export async function runHook() {
       // Never block Claude Code due to explainer errors
     }
 
-    // 4. Audit log
+    // 4. Dry-run — show explanation then block execution
+    if (isDryRun) {
+      const msg = '[wtflag] Dry-run mode is active — command blocked. Unset WTFLAG_DRY_RUN to allow.\n';
+      process.stderr.write(msg);
+      try {
+        appendLog({ command, cwd: process.cwd(), blocked: true, blockedBy: 'dry-run', blockedType: 'dry-run', danger: [] });
+      } catch {}
+      process.exit(2);
+    }
+
+    // 5. Audit log
     try {
       const dangers = checkDanger(command);
       appendLog({

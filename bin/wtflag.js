@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { program } from 'commander';
 import { homedir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 const { version } = createRequire(import.meta.url)('../package.json');
-import { install, uninstall } from '../src/installer.js';
+import { install, uninstall, installSoundHooks, uninstallSoundHooks, isSoundHookInstalled } from '../src/installer.js';
 import { explain } from '../src/explain.js';
 import { runHook } from '../src/hook.js';
 import { startWatcher } from '../src/watcher.js';
@@ -13,12 +14,17 @@ import {
   addToBlocklist, removeFromBlocklist, listBlocklist,
   addBlockPattern, removeBlockPattern, listBlockPatterns,
   setMutelist, setBlocklist, setBlockPatterns,
+  isSoundEnabled, setSoundEnabled,
 } from '../src/config.js';
 import { allowCommand, disallowCommand, allowAll, disallowAll, listAllowed } from '../src/allow.js';
 import { readLog, clearLog, LOG_PATH } from '../src/log.js';
+import { playSound } from '../src/sound.js';
 import { getProfile, saveProfile, deleteProfile, listProfiles, BUILTIN } from '../src/profiles.js';
 import { findProjectConfig } from '../src/project-config.js';
 import { showStatus } from '../src/status.js';
+import { explainDiff } from '../src/diff.js';
+import { generateReport } from '../src/report.js';
+import { checkDanger, listCustomRules, addCustomRule, removeCustomRule } from '../src/danger.js';
 
 program
   .name('wtflag')
@@ -62,7 +68,8 @@ program
 program
   .command('hook')
   .description('Hook entrypoint — reads Bash tool JSON from stdin')
-  .action(runHook);
+  .option('--dry-run', 'explain commands but block all execution (preview mode)')
+  .action((opts) => runHook({ dryRun: opts.dryRun }));
 
 program
   .command('watch')
@@ -193,12 +200,15 @@ program
   .action(() => {
     const added = allowAll();
     if (added) {
-      console.log('✓ All Bash commands will be auto-accepted — no permission prompts.');
-      console.log('✓ Autonomy section added to ~/.claude/CLAUDE.md — safety confirmations suppressed.');
-      console.log('  Note: commands on your block list are still prevented.');
+      console.log('✓ All Bash commands auto-accepted — no permission prompts.');
+      console.log('');
+      console.log('  Note: This modifies ~/.claude/settings.json and ~/.claude/CLAUDE.md');
+      console.log('        and affects ALL Claude Code sessions globally, not just this project.');
+      console.log('  Note: Commands on your block list are still prevented.');
       console.log('  Run `wtflag disallow-all` to revert both changes.');
     } else {
-      console.log('✓ allowedTools already set — updated CLAUDE.md autonomy section.');
+      console.log('✓ allowedTools already set — CLAUDE.md autonomy section updated.');
+      console.log('  Note: Affects ALL Claude Code sessions globally.');
     }
   });
 
@@ -244,11 +254,21 @@ program
   .option('--blocked', 'show only blocked commands')
   .option('--danger', 'show only commands that triggered danger warnings')
   .option('-n <count>', 'number of entries to show', '20')
-  .option('--clear', 'clear the log')
+  .option('--clear', 'clear the log (requires --yes)')
+  .option('--yes', 'confirm destructive operations without prompting')
   .option('--path', 'print the log file path')
+  .option('--report', 'show a summary report of the full log')
   .action((opts) => {
     if (opts.path) { console.log(LOG_PATH); return; }
+    if (opts.report) { console.log(generateReport(readLog())); return; }
     if (opts.clear) {
+      if (!opts.yes) {
+        const count = readLog().length;
+        console.log(`This will permanently delete ${count} log entr${count === 1 ? 'y' : 'ies'} from:`);
+        console.log(`  ${LOG_PATH}`);
+        console.log(`Run \`wtflag log --clear --yes\` to confirm.`);
+        return;
+      }
       clearLog();
       console.log('✓ Log cleared.');
       return;
@@ -349,6 +369,15 @@ profileCmd
   .action((name) => {
     const p = getProfile(name);
     if (!p) { console.log(`Profile '${name}' not found. Run \`wtflag profile list\` to see available profiles.`); return; }
+    const currentBlocked = listBlocklist();
+    const currentMuted = listMutelist();
+    const currentPatterns = listBlockPatterns();
+    if (currentBlocked.length || currentMuted.length || currentPatterns.length) {
+      console.log('Replacing current config:');
+      if (currentBlocked.length)   console.log(`  Blocked: ${currentBlocked.join(', ')}`);
+      if (currentPatterns.length)  console.log(`  Patterns: ${currentPatterns.length} pattern(s)`);
+      if (currentMuted.length)     console.log(`  Muted: ${currentMuted.join(', ')}`);
+    }
     setMutelist(p.muted ?? []);
     setBlocklist(p.blocked ?? []);
     setBlockPatterns(p.blockPatterns ?? []);
@@ -372,6 +401,50 @@ profileCmd
     }
   });
 
+// --- Sound ---
+
+const soundCmd = program
+  .command('sound')
+  .description('Control ping sounds for permission prompts and task completion');
+
+soundCmd
+  .command('on')
+  .description('Enable ping sounds — plays when Claude asks permission or finishes')
+  .action(() => {
+    setSoundEnabled(true);
+    installSoundHooks();
+    console.log('✓ Sound enabled — you\'ll hear a ping when Claude asks for permission or is done.');
+    console.log('  Restart Claude Code to activate the hooks.');
+  });
+
+soundCmd
+  .command('off')
+  .description('Disable ping sounds')
+  .action(() => {
+    setSoundEnabled(false);
+    uninstallSoundHooks();
+    console.log('✓ Sound disabled.');
+  });
+
+soundCmd
+  .command('play [event]')
+  .description('Play a sound immediately (events: notification, stop) — used by hooks')
+  .action((event = 'notification') => {
+    if (isSoundEnabled()) playSound(event);
+  });
+
+soundCmd
+  .command('status')
+  .description('Show whether sound is enabled')
+  .action(() => {
+    const enabled = isSoundEnabled();
+    const hooked = isSoundHookInstalled();
+    console.log(`Sound: ${enabled ? 'on' : 'off'}`);
+    if (enabled && !hooked) {
+      console.log('  Warning: hooks not found in settings.json — run `wtflag sound on` to reinstall.');
+    }
+  });
+
 // --- Project config info ---
 
 program
@@ -386,6 +459,136 @@ program
     } else {
       console.log(`Active project config: ${found.path}`);
       console.log(JSON.stringify(found.config, null, 2));
+    }
+  });
+
+// --- Diff explanation ---
+
+program
+  .command('diff [refs...]')
+  .description('Explain a git diff — pipe one in or pass git refs (e.g. HEAD~1, main..feature)')
+  .action(async (refs) => {
+    let text;
+    if (refs.length > 0) {
+      const result = spawnSync('git', ['diff', ...refs], { encoding: 'utf8' });
+      if (result.error) { console.error(`git error: ${result.error.message}`); process.exit(1); }
+      text = result.stdout ?? '';
+      if (!text && result.stderr) { console.error(result.stderr.trim()); process.exit(1); }
+    } else if (!process.stdin.isTTY) {
+      const chunks = [];
+      for await (const chunk of process.stdin) chunks.push(chunk);
+      text = chunks.join('');
+    } else {
+      console.log('Usage: git diff | wtflag diff');
+      console.log('   or: wtflag diff HEAD~1');
+      console.log('   or: wtflag diff main..feature-branch');
+      process.exit(0);
+    }
+    const output = explainDiff(text);
+    console.log(output ?? 'No changes found in diff.');
+  });
+
+// --- Export ---
+
+program
+  .command('export')
+  .description('Export the audit log as JSON or CSV')
+  .option('--format <format>', 'output format: json or csv', 'json')
+  .action((opts) => {
+    const entries = readLog();
+    if (!entries.length) { console.log('[]'); return; }
+    if (opts.format === 'csv') {
+      const header = 'ts,command,cwd,blocked,blockedBy,blockedType,dangerLevel,danger';
+      const rows = entries.map(e => [
+        e.ts ?? '',
+        _csv(e.command ?? ''),
+        _csv(e.cwd ?? ''),
+        e.blocked ? 'true' : 'false',
+        _csv(e.blockedBy ?? ''),
+        _csv(e.blockedType ?? ''),
+        _csv(e.dangerLevel ?? ''),
+        _csv((e.danger ?? []).join('; ')),
+      ].join(','));
+      console.log([header, ...rows].join('\n'));
+    } else {
+      console.log(JSON.stringify(entries, null, 2));
+    }
+  });
+
+function _csv(val) {
+  if (!val || (!val.includes(',') && !val.includes('"') && !val.includes('\n'))) return val;
+  return '"' + val.replace(/"/g, '""') + '"';
+}
+
+// --- Custom danger rules ---
+
+const dangerRulesCmd = program
+  .command('danger-rules')
+  .description('Manage custom danger detection rules (~/.config/wtflag/danger-rules.json)');
+
+dangerRulesCmd
+  .command('list')
+  .description('List all custom danger rules')
+  .action(() => {
+    const rules = listCustomRules();
+    if (!rules.length) {
+      console.log('No custom danger rules. Use `wtflag danger-rules add` to create one.');
+      return;
+    }
+    console.log('Custom danger rules:');
+    rules.forEach((r, i) => {
+      console.log(`  [${i}] ${r.level.padEnd(7)}  ${r.message}`);
+      console.log(`        pattern: ${r.pattern}`);
+    });
+  });
+
+dangerRulesCmd
+  .command('add')
+  .description('Add a custom danger rule')
+  .requiredOption('--pattern <regex>', 'regular expression to match against the command string')
+  .requiredOption('--level <level>', 'severity level: danger or warning')
+  .requiredOption('--message <text>', 'description shown when the rule fires')
+  .action((opts) => {
+    if (!['danger', 'warning'].includes(opts.level)) {
+      console.error('Error: --level must be "danger" or "warning".');
+      process.exit(1);
+    }
+    try {
+      addCustomRule(opts.pattern, opts.level, opts.message);
+      console.log(`✓ Rule added (${opts.level}): ${opts.message}`);
+      console.log(`  Pattern: ${opts.pattern}`);
+    } catch (e) {
+      console.error(`Error: invalid regex pattern — ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+dangerRulesCmd
+  .command('remove <index>')
+  .description('Remove a custom rule by index (see `wtflag danger-rules list`)')
+  .action((index) => {
+    const i = parseInt(index, 10);
+    if (isNaN(i)) { console.error('Error: index must be a number.'); process.exit(1); }
+    const removed = removeCustomRule(i);
+    if (removed) {
+      console.log(`✓ Rule [${i}] removed.`);
+    } else {
+      console.log(`No rule at index ${i}. Run \`wtflag danger-rules list\` to see available rules.`);
+    }
+  });
+
+dangerRulesCmd
+  .command('test <command>')
+  .description('Test which danger rules (built-in and custom) fire for a command string')
+  .action((cmd) => {
+    const results = checkDanger(cmd);
+    if (!results.length) {
+      console.log('No danger rules matched.');
+    } else {
+      console.log(`${results.length} rule(s) matched:`);
+      for (const { level, message } of results) {
+        console.log(`  [${level}]  ${message}`);
+      }
     }
   });
 
