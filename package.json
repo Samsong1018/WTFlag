@@ -10,7 +10,9 @@
     "bin",
     "src",
     "scripts",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build-db": "node --no-warnings scripts/build-db.js",
