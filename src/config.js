@@ -130,10 +130,90 @@ export function setBlockPatterns(patterns) {
   writeConfig(config);
 }
 
+// Common GNU long-form flags mapped to their short-form equivalent, so a pattern written
+// with one style still matches a command written with the other (`rm --recursive --force`
+// vs `rm -rf`). Deliberately narrow — only the handful of flags relevant to destructive
+// commands wtflag ships patterns for.
+const LONG_TO_SHORT_FLAGS = {
+  '--recursive': '-r',
+  '--force': '-f',
+  '--all': '-a',
+  '--verbose': '-v',
+  '--interactive': '-i',
+  '--quiet': '-q',
+};
+
+// Reuses the tokenizer's own "combined short flags are 2-3 letters" convention (see
+// tokenizer.js) to canonicalize flag order/shape before comparing: `-rf`, `-fr`, and
+// `-r -f` (as separate tokens) all normalize to the same sorted form.
+const COMBINED_SHORT_FLAG = /^-[a-zA-Z]{2,3}$/;
+const SINGLE_SHORT_FLAG = /^-[a-zA-Z]$/;
+
+// Collapses whitespace runs to a single space and canonicalizes flag shape/order so that
+// trivial reformatting (double spaces, split flags, long-form flags) can't bypass a
+// pattern written for the equivalent short/combined form.
+function normalizeForMatch(str) {
+  const collapsed = str.trim().replace(/\s+/g, ' ');
+  if (!collapsed) return collapsed;
+
+  const words = collapsed.split(' ').map(w => LONG_TO_SHORT_FLAGS[w.toLowerCase()] ?? w);
+
+  const merged = [];
+  let i = 0;
+  while (i < words.length) {
+    const w = words[i];
+    if (SINGLE_SHORT_FLAG.test(w)) {
+      // Merge a run of consecutive standalone single-letter flags: "-r -f" → "-fr"
+      const letters = [w.slice(1)];
+      i++;
+      while (i < words.length && SINGLE_SHORT_FLAG.test(words[i])) {
+        letters.push(words[i].slice(1));
+        i++;
+      }
+      merged.push('-' + letters.sort().join(''));
+      continue;
+    }
+    if (COMBINED_SHORT_FLAG.test(w)) {
+      // Canonicalize an already-combined short-flag cluster: "-rf" and "-fr" → same form
+      merged.push('-' + w.slice(1).split('').sort().join(''));
+      i++;
+      continue;
+    }
+    merged.push(w);
+    i++;
+  }
+  return merged.join(' ');
+}
+
+// Shell operators that should tolerate zero-or-more surrounding whitespace when compiled
+// into the pattern regex — e.g. `curl * | bash` must still match `curl url|bash`.
+const OPERATOR_SPLIT = /(\|\||&&|;|\|)/;
+
+function escapeRegexLiteral(str) {
+  return str.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function compilePatternRegex(normPattern) {
+  const parts = normPattern.split(OPERATOR_SPLIT);
+  const compiled = parts.map(part => {
+    if (part === '||' || part === '&&' || part === ';' || part === '|') {
+      return `\\s*${escapeRegexLiteral(part)}\\s*`;
+    }
+    const trimmed = part.replace(/^ +| +$/g, '');
+    return escapeRegexLiteral(trimmed).replace(/\*/g, '.*');
+  });
+  return new RegExp(compiled.join(''), 'i');
+}
+
 // Glob-style pattern matching: * matches anything, case-insensitive substring test.
+// Both the pattern and the command are normalized first (whitespace collapsed, flags
+// canonicalized) so `rm  -rf`, `rm -r -f`, and `rm --recursive --force` all match a
+// pattern written as `rm -rf`, and the compiled regex tolerates missing whitespace
+// around pipes/operators so `curl url|bash` still matches `curl * | bash`.
 export function matchesPattern(pattern, command) {
-  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
-  return new RegExp(escaped, 'i').test(command);
+  const normPattern = normalizeForMatch(pattern);
+  const normCommand = normalizeForMatch(command);
+  return compilePatternRegex(normPattern).test(normCommand);
 }
 
 // --- Sound ---

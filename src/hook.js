@@ -1,11 +1,11 @@
 import net from 'node:net';
 import { existsSync } from 'node:fs';
-import { explain, renderBlocked, effectiveCommand } from './explain.js';
+import { explain, renderBlocked, renderConfigError, resolveRealCommands } from './explain.js';
 import { SOCKET_PATH } from './ipc.js';
 import { isWindows } from './platform.js';
 import { matchesPattern } from './config.js';
 import { getEffectiveConfig } from './project-config.js';
-import { tokenize } from './tokenizer.js';
+import { BUILTIN } from './profiles.js';
 import { checkDanger } from './danger.js';
 import { appendLog } from './log.js';
 import { scanForSecrets, isGitCommit, isGitPush, renderSecretsBlocked, renderSecretsWarning } from './secrets.js';
@@ -30,20 +30,35 @@ export async function runHook({ dryRun = false } = {}) {
     try {
       config = getEffectiveConfig(process.cwd());
     } catch (err) {
-      process.stderr.write(`wtflag: config error — ${err.message}\n`);
-      config = { mutelist: new Set(), blocklist: new Set(), blockPatterns: [] };
+      // Fail CLOSED, not open: a corrupted/unreadable config must never silently disable
+      // blocking. Fall back to the shipped 'safe' builtin profile (dd/mkfs/fdisk/parted +
+      // rm -rf/force-push/curl-pipe-bash patterns) instead of an empty ruleset, and make
+      // the failure loud — same visual treatment as a BLOCKED command, not a dim stderr line.
+      const safe = BUILTIN.safe;
+      config = {
+        mutelist: new Set((safe.muted ?? []).map(c => c.toLowerCase())),
+        blocklist: new Set((safe.blocked ?? []).map(c => c.toLowerCase())),
+        blockPatterns: [...(safe.blockPatterns ?? [])],
+      };
+      const box = renderConfigError(`wtflag: config error — ${err.message}`, command);
+      process.stderr.write('\n' + box + '\n\n');
+      sendToWatcher(box);
+      try {
+        appendLog({ command, cwd: process.cwd(), blocked: false, configError: err.message, danger: [] });
+      } catch {}
     }
 
-    // 1. Block by command name
+    // 1. Block by command name — resolves through sudo, path/backslash forms, and known
+    // wrapper/indirection commands (bash -c, xargs, find -exec, nohup, env, command, …)
+    // so the block list can't be trivially bypassed by wrapping the real command.
     try {
-      const segments = tokenize(command).filter(Boolean);
-      const hit = segments.find(seg => config.blocklist.has(effectiveCommand(seg)));
+      const names = resolveRealCommands(command);
+      const hit = names.find(n => config.blocklist.has(n));
       if (hit) {
-        const name = effectiveCommand(hit);
-        const box = renderBlocked(name, command, false);
+        const box = renderBlocked(hit, command, false);
         process.stderr.write('\n' + box + '\n\n');
         sendToWatcher(box);
-        appendLog({ command, cwd: process.cwd(), blocked: true, blockedBy: name, blockedType: 'command', danger: [] });
+        appendLog({ command, cwd: process.cwd(), blocked: true, blockedBy: hit, blockedType: 'command', danger: [] });
         process.exit(2);
       }
     } catch {

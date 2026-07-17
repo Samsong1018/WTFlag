@@ -213,6 +213,23 @@ const RULES = [
     level: 'danger',
     message: 'Executing remote script (PowerShell) — verify the source before running',
   },
+  // ${IFS} / $IFS substitution — a common way to smuggle a space character past naive
+  // string matching (e.g. `rm${IFS}-rf${IFS}/`). wtflag is a static parser with no shell
+  // expansion awareness, so this can defeat both the name- and pattern-based block list.
+  // This is informational only — it does not and cannot reliably block, it just flags the
+  // command for manual inspection. See README.md "Blocking" section for the limitation.
+  {
+    pattern: /\$\{IFS\}|\$IFS\b/,
+    level: 'warning',
+    message: 'Possible obfuscation via $IFS substitution — wtflag cannot reliably parse variable-substituted commands; inspect this command manually',
+  },
+  // Unusually dense command substitution ($(...) or backticks) immediately preceding what
+  // looks like a command segment — another static-parser blind spot, informational only.
+  {
+    pattern: /(?:\$\([^)]*\)\s*){2,}|(?:`[^`\n]*`\s*){2,}/,
+    level: 'warning',
+    message: 'Dense command substitution ($()/backticks) — this command may be obfuscated; inspect manually',
+  },
 ];
 
 export function checkDanger(commandString) {

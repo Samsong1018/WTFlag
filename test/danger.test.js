@@ -125,3 +125,33 @@ test('fork bomb (spaced form) is danger', () => {
 test('fork bomb (compact form) is danger', () => {
   assert.ok(levels(':(){ :|:& };:').includes('danger'));
 });
+
+// --- C4: informational-only obfuscation warnings (does not block, just flags for review) ---
+
+test('${IFS} substitution triggers an informational warning', () => {
+  assert.ok(levels('rm${IFS}-rf${IFS}/tmp/x').includes('warning'));
+  assert.ok(messages('rm${IFS}-rf${IFS}/tmp/x').some(m => /obfuscation/i.test(m)));
+});
+
+test('$IFS (no braces) substitution triggers an informational warning', () => {
+  assert.ok(levels('rm$IFS-rf$IFS/tmp/x').includes('warning'));
+});
+
+test('dense $() command substitution triggers an informational warning', () => {
+  assert.ok(levels('$(echo rm) $(echo -rf) /tmp/x').includes('warning'));
+});
+
+test('dense backtick command substitution triggers an informational warning', () => {
+  assert.ok(levels('`echo rm` `echo -rf` /tmp/x').includes('warning'));
+});
+
+test('a single, ordinary command substitution does not trigger the dense-substitution warning', () => {
+  const msgs = messages('echo "today is $(date)"');
+  assert.ok(!msgs.some(m => /obfuscated/i.test(m)));
+});
+
+test('clean commands do not trigger the obfuscation warnings', () => {
+  assert.ok(!levels('git status').includes('warning'));
+  // Sanity: plain `rm -rf` still only produces the recursive-deletion 'danger', not the IFS warning
+  assert.ok(!messages('rm -rf /tmp/x').some(m => /obfuscation|obfuscated/i.test(m)));
+});

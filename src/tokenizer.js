@@ -120,7 +120,7 @@ function parseSegment(segment) {
     }
   }
 
-  return { command, subcommand, flags, args, raw: segment };
+  return { command, subcommand, flags, args, raw: segment, tokens };
 }
 
 function shellSplit(str) {

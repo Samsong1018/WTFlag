@@ -259,9 +259,13 @@ When a blocked command is attempted, you'll see:
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-`sudo rm` is also blocked — the effective command is resolved through `sudo` before checking the block list.
+`sudo rm` is also blocked — the effective command is resolved through `sudo` before checking the block list. This resolution also sees through known wrapper/indirection commands, so `bash -c "rm -rf /tmp"`, `sh -c '...'`, `python3 -c "os.system(...)"`, `xargs rm -rf`, `find . -exec rm -rf {} \;`, `nohup rm -rf ...`, `env rm -rf ...`, `command rm -rf ...`, `/bin/rm -rf ...` (path form), and `\rm -rf ...` (backslash-escaped) all resolve to the real `rm` command and are blocked the same as a bare `rm -rf` invocation.
 
 The block check runs before the permission system. Even if `allow-all` is set, a blocked command is still cancelled.
+
+> **Limitation — shell variable/expansion obfuscation:** wtflag is a static string parser, not a real shell. It has no awareness of shell expansion, so a command like `rm${IFS}-rf${IFS}/tmp/x` (using `${IFS}` in place of a literal space) is not reliably recognized by either the name-based or pattern-based block list, because the tokenizer never sees a normal `rm -rf` shape to match against. The same applies to other forms of shell-level obfuscation (heavy use of `$()`/backtick command substitution, unusual quoting tricks, etc.) — anything that requires actually *executing* shell expansion to understand is out of scope for a static parser and cannot be fully fixed without embedding a real shell interpreter.
+>
+> wtflag adds a narrow, **informational-only** warning when it sees `${IFS}`, `$IFS`, or unusually dense `$()`/backtick usage in a command (see [Danger detection](#danger-detection)) — flagging it as "this command may be obfuscated, inspect manually." This warning does **not** block execution; it is a signal to look closer, not a safety guarantee. Do not treat wtflag's block list as airtight against a deliberately obfuscated command — it is one layer of defense, not a sandbox.
 
 ### Pattern blocking
 
@@ -462,6 +466,8 @@ Stores mute list, command block list, and block patterns:
 ```
 
 Edit this file directly when managing the block list while a broad pattern is active.
+
+> **Fails closed, not open:** If this file becomes corrupted (invalid JSON) or unreadable, wtflag does **not** silently disable blocking. It prints a loud `CONFIG ERROR` box (same treatment as a `BLOCKED` command) and falls back to the built-in `safe` profile — `dd`, `mkfs`, `fdisk`, `parted` blocked, plus the `rm -rf`/force-push/curl-pipe-to-shell/`chmod 777` patterns — until the file is fixed. Your custom block/mute list is not enforced during this window, so fix or delete the file as soon as you see the warning.
 
 ### `~/.claude/settings.json`
 
